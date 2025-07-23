@@ -1,203 +1,168 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>HackBall</title>
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #222;
-      overflow: hidden;
-      font-family: sans-serif;
-      color: white;
-    }
-    canvas {
-      display: block;
-      background: #0a5f00; /* Yeşil saha */
-      margin: auto;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; font-family: sans-serif; }
+    canvas { display: block; margin: auto; background: #2b2; }
+
+    #teamSelect, #escMenu {
       position: absolute;
-      top: 0; bottom: 0; left: 0; right: 0;
-    }
-    #menu {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      background: rgba(0,0,0,0.8);
-      padding: 15px;
-      border-radius: 10px;
-      display: none;
-      z-index: 2;
-    }
-    .player-line {
-      display: flex;
-      align-items: center;
-      margin-bottom: 5px;
-    }
-    .player-line span {
-      margin-right: 10px;
-    }
-    .team-button {
-      margin-right: 5px;
-      cursor: pointer;
-      padding: 3px 6px;
-      border-radius: 4px;
-      border: none;
-    }
-    .red { background: red; color: white; }
-    .blue { background: blue; color: white; }
-    .kick { background: gray; color: white; }
-    #party-id {
-      margin-top: 10px;
-      font-weight: bold;
-    }
-    #teamSelect {
-      position: absolute;
-      top: 50%;
-      left: 50%;
+      top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      background: #000a;
+      background: #333;
       padding: 20px;
       border-radius: 10px;
+      color: white;
       display: none;
-      text-align: center;
+      z-index: 10;
     }
-    #teamSelect button {
-      margin: 10px;
-      padding: 10px 20px;
-      font-size: 18px;
+
+    #teamSelect button, .player-controls button {
+      margin: 5px;
+      padding: 10px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .red { background: crimson; color: white; }
+    .blue { background: royalblue; color: white; }
+    .kick { background: #d33; }
+    .creator { color: gold; }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .player-controls span {
+      flex-grow: 1;
+    }
+
+    #escMenu {
+      width: 300px;
+    }
+
+    #partyId {
+      margin-top: 15px;
+      font-size: 14px;
+      color: #aaa;
     }
   </style>
 </head>
 <body>
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
 
-<canvas id="gameCanvas" width="1000" height="600"></canvas>
+  <div id="teamSelect">
+    <h2>Takım Seç</h2>
+    <button class="red" onclick="selectTeam('red')">Kırmızı Takım</button>
+    <button class="blue" onclick="selectTeam('blue')">Mavi Takım</button>
+  </div>
 
-<div id="teamSelect">
-  <h2>Takımını Seç</h2>
-  <button onclick="selectTeam('red')" style="background:red;color:white">Kırmızı</button>
-  <button onclick="selectTeam('blue')" style="background:blue;color:white">Mavi</button>
-</div>
+  <div id="escMenu"></div>
 
-<div id="menu">
-  <h3>Oyuncular</h3>
-  <div id="playerList"></div>
-  <div id="party-id">Parti ID: <span id="partyIdText"></span></div>
-</div>
+  <script>
+    const socket = new WebSocket(location.origin.replace("http", "ws").replace(":3000", "") + "/ws");
 
-<script src="/socket.io/socket.io.js"></script>
-<script>
-  const canvas = document.getElementById('gameCanvas');
-  const ctx = canvas.getContext('2d');
-  const socket = io();
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
-  let players = {};
-  let ball = { x: 500, y: 300 };
-  let nickname = localStorage.getItem('nickname') || prompt("Nick'in ne?");
-  localStorage.setItem('nickname', nickname);
+    let nickname = localStorage.getItem("nickname") || prompt("Nick'in nedir?");
+    localStorage.setItem("nickname", nickname);
 
-  let menuOpen = false;
-  let isHost = false;
-  let partyId = null;
+    let playerId, players = {}, ball = {}, partyId = "";
+    let showMenu = false;
+    let isCreator = false;
+    let team = null;
 
-  let team = null;
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      menuOpen = !menuOpen;
-      document.getElementById('menu').style.display = menuOpen ? 'block' : 'none';
-    }
-    socket.emit('key', { key: e.key, state: true });
-  });
-
-  document.addEventListener('keyup', (e) => {
-    socket.emit('key', { key: e.key, state: false });
-  });
-
-  function selectTeam(chosenTeam) {
-    team = chosenTeam;
-    document.getElementById('teamSelect').style.display = 'none';
-    socket.emit('join', { nickname, team });
-  }
-
-  socket.on('teamSelect', () => {
-    document.getElementById('teamSelect').style.display = 'block';
-  });
-
-  socket.on('state', (data) => {
-    players = data.players;
-    ball = data.ball;
-    isHost = data.isHost;
-    partyId = data.partyId;
-
-    document.getElementById('partyIdText').textContent = partyId;
-    updatePlayerList();
-  });
-
-  socket.on('matchEnd', () => {
-    alert("Maç sona erdi!");
-    location.reload();
-  });
-
-  function updatePlayerList() {
-    const list = document.getElementById('playerList');
-    list.innerHTML = '';
-    Object.values(players).forEach((p, i) => {
-      const div = document.createElement('div');
-      div.className = 'player-line';
-      const name = document.createElement('span');
-      name.textContent = p.nickname;
-      if (p.isHost) name.style.color = 'yellow';
-
-      const redBtn = document.createElement('button');
-      redBtn.className = 'team-button red';
-      redBtn.textContent = 'Kırmızı';
-      redBtn.onclick = () => socket.emit('setTeam', { id: p.id, team: 'red' });
-
-      const blueBtn = document.createElement('button');
-      blueBtn.className = 'team-button blue';
-      blueBtn.textContent = 'Mavi';
-      blueBtn.onclick = () => socket.emit('setTeam', { id: p.id, team: 'blue' });
-
-      const kickBtn = document.createElement('button');
-      kickBtn.className = 'team-button kick';
-      kickBtn.textContent = '×';
-      kickBtn.onclick = () => socket.emit('kick', p.id);
-
-      div.append(name, redBtn, blueBtn, kickBtn);
-      list.appendChild(div);
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        showMenu = !showMenu;
+        updateEscMenu();
+      }
     });
-  }
 
-  function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.addEventListener("keydown", e => socket.send(JSON.stringify({ type: "keydown", key: e.key })));
+    document.addEventListener("keyup", e => socket.send(JSON.stringify({ type: "keyup", key: e.key })));
 
-    // Draw field
-    ctx.fillStyle = '#0a5f00';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw ball
-    ctx.fillStyle = 'white';
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Draw players
-    for (const id in players) {
-      const p = players[id];
-      ctx.fillStyle = p.team === 'red' ? 'red' : 'blue';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'white';
-      ctx.fillText(p.nickname, p.x - 20, p.y - 20);
+    function selectTeam(selectedTeam) {
+      team = selectedTeam;
+      document.getElementById("teamSelect").style.display = "none";
+      socket.send(JSON.stringify({ type: "join", nickname, team }));
     }
 
-    requestAnimationFrame(draw);
-  }
+    socket.addEventListener("open", () => {
+      document.getElementById("teamSelect").style.display = "block";
+    });
 
-  draw();
-</script>
+    socket.addEventListener("message", event => {
+      const data = JSON.parse(event.data);
+      if (data.type === "state") {
+        players = data.players;
+        ball = data.ball;
+        playerId = data.id;
+        partyId = data.partyId;
+        isCreator = data.creator === playerId;
+      }
+    });
 
+    function updateEscMenu() {
+      const escMenu = document.getElementById("escMenu");
+      escMenu.innerHTML = `<h3>Oyuncular</h3>`;
+      Object.entries(players).forEach(([id, p], i) => {
+        const creatorClass = id === playerId && isCreator ? "creator" : "";
+        escMenu.innerHTML += `
+          <div class="player-controls">
+            <span class="${creatorClass}">${p.nickname}</span>
+            ${isCreator && id !== playerId ? `
+              <button class="red" onclick="changeTeam('${id}', 'red')">K</button>
+              <button class="blue" onclick="changeTeam('${id}', 'blue')">M</button>
+              <button class="kick" onclick="kickPlayer('${id}')">×</button>
+            ` : ""}
+          </div>`;
+      });
+      escMenu.innerHTML += `<div id="partyId">Parti ID: ${partyId}</div>`;
+      escMenu.style.display = showMenu ? "block" : "none";
+    }
+
+    function changeTeam(id, team) {
+      socket.send(JSON.stringify({ type: "changeTeam", id, team }));
+    }
+
+    function kickPlayer(id) {
+      socket.send(JSON.stringify({ type: "kick", id }));
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Ball
+      ctx.beginPath();
+      ctx.arc(ball.x || 0, ball.y || 0, 12, 0, Math.PI * 2);
+      ctx.fillStyle = "white";
+      ctx.fill();
+
+      // Players
+      Object.values(players).forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+        ctx.fillStyle = p.team === "red" ? "crimson" : "royalblue";
+        ctx.fill();
+        ctx.fillStyle = "black";
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(p.nickname, p.x, p.y - 20);
+      });
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  </script>
 </body>
 </html>
