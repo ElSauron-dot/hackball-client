@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HackBall Takımlı Futbol</title>
+  <title>HackBall Takımlı Futbol - FPS Opt</title>
   <style>
     body {
       margin: 0;
@@ -42,6 +42,7 @@
       font-size: 14px;
       line-height: 40px;
       text-align: center;
+      transition: left 0.03s linear, top 0.03s linear;
     }
     .player {
       width: 40px;
@@ -63,6 +64,7 @@
       background: white;
       border: 2px solid black;
       box-shadow: 0 0 10px white;
+      transition: left 0.03s linear, top 0.03s linear;
     }
     #scoreboard {
       margin-top: 10px;
@@ -220,11 +222,26 @@
     };
   }
 
+  // Oyuncu ve nick elemanlarını cache'leyelim ve sadece pozisyon değişince güncelleyelim
+  const playerElements = {};
+  const nicknameElements = {};
+
   function renderPlayers() {
-    playersContainer.innerHTML = "";
     for (const p in players) {
-      const player = document.createElement("div");
-      player.className = "player";
+      if (!playerElements[p]) {
+        const player = document.createElement("div");
+        player.className = "player";
+        playersContainer.appendChild(player);
+        playerElements[p] = player;
+
+        const nick = document.createElement("div");
+        nick.className = "nickname";
+        playersContainer.appendChild(nick);
+        nicknameElements[p] = nick;
+      }
+      const player = playerElements[p];
+      const nick = nicknameElements[p];
+
       player.style.left = players[p].x + "px";
       player.style.top = players[p].y + "px";
       player.textContent = p === nickname ? "YOU" : p;
@@ -232,14 +249,19 @@
       const team = players[p].team || "red";
       player.style.background = team === "red" ? "#e74c3c" : "#3498db";
 
-      playersContainer.appendChild(player);
-
-      const nick = document.createElement("div");
-      nick.className = "nickname";
       nick.style.left = (players[p].x - 20) + "px";
       nick.style.top = (players[p].y + 40) + "px";
       nick.textContent = p;
-      playersContainer.appendChild(nick);
+    }
+
+    // Eski oyuncuları temizle
+    for (const p in playerElements) {
+      if (!players[p]) {
+        playersContainer.removeChild(playerElements[p]);
+        playersContainer.removeChild(nicknameElements[p]);
+        delete playerElements[p];
+        delete nicknameElements[p];
+      }
     }
   }
 
@@ -251,45 +273,35 @@
   let x = 100;
   let y = 100;
   const speed = 7;
-
   const keysPressed = {};
 
   document.addEventListener("keydown", e => {
     keysPressed[e.key.toLowerCase()] = true;
-    updateMovement();
   });
-
   document.addEventListener("keyup", e => {
     keysPressed[e.key.toLowerCase()] = false;
   });
 
   function updateMovement() {
     if (matchEnded) return;
+
     let oldX = x, oldY = y;
+    if (keysPressed["arrowup"] || keysPressed["w"]) y = Math.max(0, y - speed);
+    if (keysPressed["arrowdown"] || keysPressed["s"]) y = Math.min(FIELD_HEIGHT - 40, y + speed);
+    if (keysPressed["arrowleft"] || keysPressed["a"]) x = Math.max(0, x - speed);
+    if (keysPressed["arrowright"] || keysPressed["d"]) x = Math.min(FIELD_WIDTH - 40, x + speed);
 
-    if (keysPressed["arrowup"] || keysPressed["w"]) {
-      y = Math.max(0, y - speed);
-    }
-    if (keysPressed["arrowdown"] || keysPressed["s"]) {
-      y = Math.min(FIELD_HEIGHT - 40, y + speed);
-    }
-    if (keysPressed["arrowleft"] || keysPressed["a"]) {
-      x = Math.max(0, x - speed);
-    }
-    if (keysPressed["arrowright"] || keysPressed["d"]) {
-      x = Math.min(FIELD_WIDTH - 40, x + speed);
-    }
-
+    // Topun içinden geçmeyi engelle
     if (isColliding(x, y, ball.x, ball.y)) {
       x = oldX;
       y = oldY;
     }
 
-    sendMove();
+    // Hareket varsa gönder
+    if (oldX !== x || oldY !== y) sendMove();
 
-    if (keysPressed[" "] || keysPressed["0"]) {
-      sendMove("kick");
-    }
+    // Şut tuşları
+    if (keysPressed[" "] || keysPressed["0"]) sendMove("kick");
   }
 
   function isColliding(px, py, bx, by, pr=20, br=15) {
@@ -302,6 +314,11 @@
     if(socket && socket.readyState === WebSocket.OPEN){
       socket.send(JSON.stringify({ type: "move", x, y, action }));
     }
+  }
+
+  function gameLoop() {
+    updateMovement();
+    requestAnimationFrame(gameLoop);
   }
 
   joinBtn.onclick = () => {
@@ -319,6 +336,7 @@
     gameDiv.style.display = "block";
     x = 100; y = 100;
     connect(team);
+    requestAnimationFrame(gameLoop);
   };
 
   createBtn.onclick = () => {
