@@ -2,171 +2,239 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <title>HackBall Multiplayer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HackBall - WAN Uyumlu</title>
   <style>
     body {
-      margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center;
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
     }
-    #lobby, #roomDisplay {
-      padding-top: 50px;
+    #login, #game {
+      margin-top: 20px;
     }
     #game {
-      display: none; margin: 20px auto; background: #222; border: 2px solid #fff;
+      display: none;
+      position: relative;
+      width: 800px;
+      height: 400px;
+      background: #222;
+      border: 2px solid white;
+      border-radius: 10px;
+      overflow: hidden;
     }
-    input, button {
-      padding: 10px; margin: 10px; font-size: 16px; border-radius: 8px; border: none;
+    .player {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      background: white;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 40px;
+      color: black;
+      font-weight: bold;
+      user-select: none;
+      pointer-events: none;
     }
-    button {
-      cursor: pointer;
+    .nickname {
+      position: absolute;
+      width: 80px;
+      text-align: center;
+      color: white;
+      font-size: 12px;
+      user-select: none;
+      pointer-events: none;
+    }
+    #scoreboard {
+      margin-top: 10px;
+      font-size: 18px;
+    }
+    #goals {
+      position: absolute;
+      top: 50%;
+      width: 20px;
+      height: 100px;
+      margin-top: -50px;
+      background: #666;
+      border-radius: 5px;
+    }
+    #goalLeft {
+      left: 0;
+    }
+    #goalRight {
+      right: 0;
     }
   </style>
 </head>
 <body>
 
-<div id="lobby">
-  <h1>⚽ HackBall'a Hoş Geldin</h1>
-  <input type="text" id="nickname" placeholder="Takma adını yaz"><br />
-  <input type="text" id="roomId" placeholder="Parti ID gir (örnek: abc123)"><br />
-  <button onclick="joinGame()">Katıl</button>
-  <button onclick="createRoom()">Yeni Parti Oluştur</button>
+<div id="login">
+  <input type="text" id="nickname" placeholder="Nickiniz" />
+  <input type="text" id="roomId" placeholder="Parti ID (ör: oda1)" />
+  <button id="joinBtn">Partiye Katıl</button>
+  <button id="createBtn">Parti Oluştur</button>
+  <p id="loginMsg" style="color: red;"></p>
 </div>
 
-<div id="roomDisplay" style="display:none;">
-  <h2>✅ Parti oluşturuldu!</h2>
-  <p>Bu parti ID'sini arkadaşlarınla paylaş:</p>
-  <h1 id="roomCodeDisplay" style="font-size: 36px; color: lime;"></h1>
-  <button onclick="startHostGame()">Oyunu Başlat</button>
+<div id="game">
+  <div id="goalLeft" class="goal"></div>
+  <div id="goalRight" class="goal"></div>
+  <div id="playersContainer"></div>
+  <div id="scoreboard">0 - 0</div>
 </div>
-
-<canvas id="game" width="600" height="400"></canvas>
 
 <script>
-  const FIELD_WIDTH = 600;
-  const FIELD_HEIGHT = 400;
-  const GOAL_WIDTH = 100;
+  const socketUrl = "wss://hackball-server.onrender.com";
+  let socket;
 
-  let nickname = '';
-  let roomId = '';
-  let ws;
+  const nicknameInput = document.getElementById("nickname");
+  const roomIdInput = document.getElementById("roomId");
+  const joinBtn = document.getElementById("joinBtn");
+  const createBtn = document.getElementById("createBtn");
+  const loginMsg = document.getElementById("loginMsg");
+  const loginDiv = document.getElementById("login");
+  const gameDiv = document.getElementById("game");
+  const playersContainer = document.getElementById("playersContainer");
+  const scoreboard = document.getElementById("scoreboard");
+
+  let nickname = "";
+  let roomId = "";
   let players = {};
-  let ball = { x: 300, y: 200 };
-  let scores = { team1: 0, team2: 0 };
+  let score = { left: 0, right: 0 };
 
-  function createRoom() {
-    nickname = document.getElementById('nickname').value.trim();
-    if (!nickname) return alert("Lütfen takma ad gir");
+  function connect() {
+    socket = new WebSocket(socketUrl);
 
-    roomId = Math.random().toString(36).substring(2, 8);
-    document.getElementById('lobby').style.display = 'none';
-    document.getElementById('roomDisplay').style.display = 'block';
-    document.getElementById('roomCodeDisplay').innerText = roomId;
-  }
-
-  function startHostGame() {
-    connectWebSocket();
-    document.getElementById('roomDisplay').style.display = 'none';
-    document.getElementById('game').style.display = 'block';
-  }
-
-  function joinGame() {
-    nickname = document.getElementById('nickname').value.trim();
-    roomId = document.getElementById('roomId').value.trim();
-    if (!nickname || !roomId) return alert("Lütfen hem takma ad hem parti ID gir");
-
-    connectWebSocket();
-    document.getElementById('lobby').style.display = 'none';
-    document.getElementById('game').style.display = 'block';
-  }
-
-  function connectWebSocket() {
-    ws = new WebSocket('ws://localhost:3000'); // Sunucu adresini değiştir!
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', nickname, roomId }));
+    socket.onopen = () => {
+      console.log("WebSocket bağlantısı açıldı");
+      socket.send(JSON.stringify({ type: "join", nickname, roomId }));
     };
 
-    ws.onmessage = event => {
+    socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      if (data.type === 'error') {
-        alert(data.message);
-        location.reload();
-        return;
+      if (data.type === "players") {
+        players = {};
+        data.players.forEach(p => {
+          if (!players[p]) {
+            players[p] = { x: 100, y: 100, action: null };
+          }
+        });
+        renderPlayers();
       }
 
-      if (data.type === 'gameState') {
-        players = data.players.reduce((acc, p, i) => {
-          acc[i] = p;
-          return acc;
-        }, {});
-        ball = data.ball;
-        scores = data.scores;
+      if (data.type === "move") {
+        if (players[data.nickname]) {
+          players[data.nickname].x = data.x;
+          players[data.nickname].y = data.y;
+          players[data.nickname].action = data.action || null;
+          renderPlayers();
+        }
+      }
+
+      if (data.type === "score") {
+        score = data.score;
+        scoreboard.textContent = `${score.left} - ${score.right}`;
       }
     };
 
-    ws.onclose = () => {
-      alert('Sunucu bağlantısı kesildi!');
-      location.reload();
+    socket.onerror = (e) => {
+      console.error("WebSocket hata", e);
     };
 
-    window.addEventListener('keydown', e => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-      let dir = null;
-      if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') dir = 'left';
-      else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') dir = 'right';
-      else if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') dir = 'up';
-      else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') dir = 'down';
-
-      if (dir) ws.send(JSON.stringify({ type: 'move', dir }));
-
-      if (e.code === 'Numpad0' || e.code === 'Space') {
-        ws.send(JSON.stringify({ type: 'kick' }));
-      }
-    });
-
-    draw();
+    socket.onclose = () => {
+      console.log("WebSocket kapandı");
+      alert("Bağlantı koptu! Sayfayı yenileyin.");
+    };
   }
 
-  function draw() {
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
+  function renderPlayers() {
+    playersContainer.innerHTML = "";
+    for (const p in players) {
+      const player = document.createElement("div");
+      player.className = "player";
+      player.style.left = players[p].x + "px";
+      player.style.top = players[p].y + "px";
+      playersContainer.appendChild(player);
 
-    ctx.clearRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
-
-    // Kale çizimi
-    ctx.fillStyle = 'gray';
-    ctx.fillRect(0, FIELD_HEIGHT / 2 - GOAL_WIDTH / 2, 10, GOAL_WIDTH);
-    ctx.fillRect(FIELD_WIDTH - 10, FIELD_HEIGHT / 2 - GOAL_WIDTH / 2, 10, GOAL_WIDTH);
-
-    // Skor yazısı
-    ctx.fillStyle = 'white';
-    ctx.font = '20px Arial';
-    ctx.fillText(`KIRMIZI: ${scores.team1}`, 50, 30);
-    ctx.fillText(`MAVİ: ${scores.team2}`, FIELD_WIDTH - 150, 30);
-
-    // Topu çiz
-    ctx.fillStyle = 'white';
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Oyuncuları çiz
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'center';
-    for (let id in players) {
-      let p = players[id];
-      ctx.fillStyle = p.team === 1 ? 'red' : 'blue';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = 'white';
-      ctx.fillText(p.nickname || '', p.x, p.y + 30);
+      const nick = document.createElement("div");
+      nick.className = "nickname";
+      nick.style.left = (players[p].x - 20) + "px";
+      nick.style.top = (players[p].y + 40) + "px";
+      nick.textContent = p;
+      playersContainer.appendChild(nick);
     }
-
-    requestAnimationFrame(draw);
   }
+
+  let x = 100;
+  let y = 100;
+  const speed = 5;
+
+  function sendMove(action = null) {
+    socket.send(JSON.stringify({ type: "move", x, y, action }));
+  }
+
+  document.addEventListener("keydown", e => {
+    let oldX = x, oldY = y;
+    switch (e.key) {
+      case "ArrowUp":
+      case "w":
+      case "W":
+        y = Math.max(0, y - speed);
+        break;
+      case "ArrowDown":
+      case "s":
+      case "S":
+        y = Math.min(360, y + speed);
+        break;
+      case "ArrowLeft":
+      case "a":
+      case "A":
+        x = Math.max(0, x - speed);
+        break;
+      case "ArrowRight":
+      case "d":
+      case "D":
+        x = Math.min(760, x + speed);
+        break;
+      case " ":
+      case "0":
+        sendMove("kick");
+        return;
+    }
+    if (oldX !== x || oldY !== y) {
+      sendMove();
+    }
+  });
+
+  joinBtn.onclick = () => {
+    nickname = nicknameInput.value.trim();
+    roomId = roomIdInput.value.trim();
+    if (!nickname || !roomId) {
+      loginMsg.textContent = "Lütfen nick ve parti ID girin!";
+      return;
+    }
+    loginMsg.textContent = "";
+    loginDiv.style.display = "none";
+    gameDiv.style.display = "block";
+    connect();
+  };
+
+  createBtn.onclick = () => {
+    nickname = nicknameInput.value.trim();
+    if (!nickname) {
+      loginMsg.textContent = "Lütfen nick girin!";
+      return;
+    }
+    roomId = "room" + Math.floor(Math.random() * 10000);
+    roomIdInput.value = roomId;
+    loginMsg.textContent = "Parti oluşturuldu! ID: " + roomId;
+  };
 </script>
 
 </body>
