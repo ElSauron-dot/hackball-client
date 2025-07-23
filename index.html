@@ -2,30 +2,19 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <title>HackBall</title>
+  <title>HackBall Multiplayer</title>
   <style>
     body {
-      margin: 0;
-      font-family: sans-serif;
-      background: #111;
-      color: white;
-      text-align: center;
+      margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center;
     }
-    #lobby {
+    #lobby, #roomDisplay {
       padding-top: 50px;
     }
     #game {
-      display: none;
-      margin: 20px auto;
-      background: #222;
-      border: 2px solid #fff;
+      display: none; margin: 20px auto; background: #222; border: 2px solid #fff;
     }
     input, button {
-      padding: 10px;
-      margin: 10px;
-      font-size: 16px;
-      border-radius: 8px;
-      border: none;
+      padding: 10px; margin: 10px; font-size: 16px; border-radius: 8px; border: none;
     }
     button {
       cursor: pointer;
@@ -36,68 +25,103 @@
 
 <div id="lobby">
   <h1>⚽ HackBall'a Hoş Geldin</h1>
-  <input type="text" id="nickname" placeholder="Takma adını yaz"><br>
-  <input type="text" id="roomId" placeholder="Parti ID gir (örnek: abc123)"><br>
+  <input type="text" id="nickname" placeholder="Takma adını yaz"><br />
+  <input type="text" id="roomId" placeholder="Parti ID gir (örnek: abc123)"><br />
   <button onclick="joinGame()">Katıl</button>
   <button onclick="createRoom()">Yeni Parti Oluştur</button>
+</div>
+
+<div id="roomDisplay" style="display:none;">
+  <h2>✅ Parti oluşturuldu!</h2>
+  <p>Bu parti ID'sini arkadaşlarınla paylaş:</p>
+  <h1 id="roomCodeDisplay" style="font-size: 36px; color: lime;"></h1>
+  <button onclick="startHostGame()">Oyunu Başlat</button>
 </div>
 
 <canvas id="game" width="600" height="400"></canvas>
 
 <script>
+  const FIELD_WIDTH = 600;
+  const FIELD_HEIGHT = 400;
+  const GOAL_WIDTH = 100;
+
   let nickname = '';
   let roomId = '';
   let ws;
   let players = {};
   let ball = { x: 300, y: 200 };
+  let scores = { team1: 0, team2: 0 };
 
   function createRoom() {
-    const nameInput = document.getElementById('nickname');
-    nickname = nameInput.value.trim();
+    nickname = document.getElementById('nickname').value.trim();
     if (!nickname) return alert("Lütfen takma ad gir");
 
-    roomId = Math.random().toString(36).substring(2, 8); // rastgele ID
+    roomId = Math.random().toString(36).substring(2, 8);
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('roomDisplay').style.display = 'block';
+    document.getElementById('roomCodeDisplay').innerText = roomId;
+  }
+
+  function startHostGame() {
     connectWebSocket();
+    document.getElementById('roomDisplay').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
   }
 
   function joinGame() {
-    const nameInput = document.getElementById('nickname');
-    const roomInput = document.getElementById('roomId');
-    nickname = nameInput.value.trim();
-    roomId = roomInput.value.trim();
+    nickname = document.getElementById('nickname').value.trim();
+    roomId = document.getElementById('roomId').value.trim();
     if (!nickname || !roomId) return alert("Lütfen hem takma ad hem parti ID gir");
 
     connectWebSocket();
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
   }
 
   function connectWebSocket() {
-    // Örnek WebSocket URL'si — kendi server URL'inle değiştir
-    ws = new WebSocket('wss://YOUR_SERVER_URL');
+    ws = new WebSocket('ws://localhost:3000'); // Sunucu adresini değiştir!
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'join', nickname, roomId }));
-      document.getElementById('lobby').style.display = 'none';
-      document.getElementById('game').style.display = 'block';
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = event => {
       const data = JSON.parse(event.data);
-      if (data.type === 'gameState') {
-        players = data.players;
-        ball = data.ball;
+
+      if (data.type === 'error') {
+        alert(data.message);
+        location.reload();
+        return;
       }
+
+      if (data.type === 'gameState') {
+        players = data.players.reduce((acc, p, i) => {
+          acc[i] = p;
+          return acc;
+        }, {});
+        ball = data.ball;
+        scores = data.scores;
+      }
+    };
+
+    ws.onclose = () => {
+      alert('Sunucu bağlantısı kesildi!');
+      location.reload();
     };
 
     window.addEventListener('keydown', e => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      let dir = null;
-      if (e.key === 'ArrowLeft') dir = 'left';
-      else if (e.key === 'ArrowRight') dir = 'right';
-      else if (e.key === 'ArrowUp') dir = 'up';
-      else if (e.key === 'ArrowDown') dir = 'down';
 
-      if (dir) {
-        ws.send(JSON.stringify({ type: 'move', dir }));
+      let dir = null;
+      if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') dir = 'left';
+      else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') dir = 'right';
+      else if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') dir = 'up';
+      else if (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') dir = 'down';
+
+      if (dir) ws.send(JSON.stringify({ type: 'move', dir }));
+
+      if (e.code === 'Numpad0' || e.code === 'Space') {
+        ws.send(JSON.stringify({ type: 'kick' }));
       }
     });
 
@@ -108,24 +132,37 @@
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
 
+    // Kale çizimi
+    ctx.fillStyle = 'gray';
+    ctx.fillRect(0, FIELD_HEIGHT / 2 - GOAL_WIDTH / 2, 10, GOAL_WIDTH);
+    ctx.fillRect(FIELD_WIDTH - 10, FIELD_HEIGHT / 2 - GOAL_WIDTH / 2, 10, GOAL_WIDTH);
+
+    // Skor yazısı
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.fillText(`KIRMIZI: ${scores.team1}`, 50, 30);
+    ctx.fillText(`MAVİ: ${scores.team2}`, FIELD_WIDTH - 150, 30);
+
+    // Topu çiz
     ctx.fillStyle = 'white';
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
+    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = 'red';
+    // Oyuncuları çiz
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
     for (let id in players) {
       let p = players[id];
+      ctx.fillStyle = p.team === 1 ? 'red' : 'blue';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Takma adını yaz
       ctx.fillStyle = 'white';
-      ctx.fillText(p.nickname || '', p.x - 20, p.y - 20);
-      ctx.fillStyle = 'red';
+      ctx.fillText(p.nickname || '', p.x, p.y + 30);
     }
 
     requestAnimationFrame(draw);
