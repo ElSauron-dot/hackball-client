@@ -1,34 +1,98 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>HackBall Gelişmiş</title>
-<style>
-  body {
-    margin: 0; background: #111; color: white; font-family: Arial, sans-serif; user-select: none; display: flex; flex-direction: column; align-items: center;
-  }
-  #login, #game { margin-top: 20px; }
-  #game { display: none; position: relative; width: 800px; height: 400px; background: #222; border: 2px solid white; border-radius: 10px; overflow: hidden; }
-  .player, .ball {
-    position: absolute; border-radius: 50%; user-select: none; pointer-events: none;
-  }
-  .player {
-    width: 40px; height: 40px; background: white; color: black; font-weight: bold; text-align: center; line-height: 40px;
-  }
-  .nickname {
-    position: absolute; width: 80px; text-align: center; font-size: 12px; color: white; user-select: none; pointer-events: none;
-  }
-  .ball {
-    width: 30px; height: 30px; background: orange; border: 2px solid #ffa500; box-shadow: 0 0 10px orange;
-  }
-  #scoreboard { margin-top: 10px; font-size: 20px; }
-  .goal {
-    position: absolute; top: 50%; width: 20px; height: 100px; margin-top: -50px; background: #666; border-radius: 5px;
-  }
-  #goalLeft { left: 0; }
-  #goalRight { right: 0; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HackBall Geniş Saha</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    #login, #game {
+      margin-top: 20px;
+      text-align: center;
+    }
+    #game {
+      display: none;
+      position: relative;
+      width: 1000px;
+      height: 600px;
+      background: #222;
+      border: 2px solid white;
+      border-radius: 10px;
+      overflow: hidden;
+      box-sizing: border-box;
+      margin: auto;
+    }
+    .player, .ball {
+      position: absolute;
+      border-radius: 50%;
+      user-select: none;
+      pointer-events: none;
+    }
+    .player {
+      width: 40px;
+      height: 40px;
+      background: white;
+      color: black;
+      font-weight: bold;
+      text-align: center;
+      line-height: 40px;
+    }
+    .nickname {
+      position: absolute;
+      width: 80px;
+      text-align: center;
+      font-size: 12px;
+      color: white;
+      user-select: none;
+      pointer-events: none;
+    }
+    .ball {
+      width: 30px;
+      height: 30px;
+      background: orange;
+      border: 2px solid #ffa500;
+      box-shadow: 0 0 10px orange;
+    }
+    #scoreboard {
+      margin-top: 10px;
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .goal {
+      position: absolute;
+      top: 50%;
+      width: 20px;
+      height: 150px;
+      margin-top: -75px;
+      background: #666;
+      border-radius: 5px;
+    }
+    #goalLeft { left: 0; }
+    #goalRight { right: 0; }
+    #matchEndMsg {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9);
+      padding: 30px 50px;
+      border-radius: 15px;
+      font-size: 28px;
+      display: none;
+      z-index: 10;
+    }
+  </style>
 </head>
 <body>
 
@@ -46,6 +110,7 @@
   <div id="playersContainer"></div>
   <div id="scoreboard">0 - 0</div>
   <div id="ball" class="ball"></div>
+  <div id="matchEndMsg"></div>
 </div>
 
 <script>
@@ -62,12 +127,31 @@
   const playersContainer = document.getElementById("playersContainer");
   const scoreboard = document.getElementById("scoreboard");
   const ballDiv = document.getElementById("ball");
+  const matchEndMsg = document.getElementById("matchEndMsg");
 
   let nickname = "";
   let roomId = "";
   let players = {};
   let score = { left: 0, right: 0 };
-  let ball = { x: 385, y: 185 };
+  let ball = { x: 485, y: 285 };
+  let matchEnded = false;
+
+  // Eğer localStorage varsa nick kaydet
+  function saveNick(nick) {
+    try {
+      localStorage.setItem('hackballNick', nick);
+    } catch {}
+  }
+
+  function loadNick() {
+    try {
+      return localStorage.getItem('hackballNick') || "";
+    } catch {
+      return "";
+    }
+  }
+
+  nicknameInput.value = loadNick();
 
   function connect() {
     socket = new WebSocket(socketUrl);
@@ -108,6 +192,26 @@
         ball.y = data.y;
         renderBall();
       }
+
+      if (data.type === "goal") {
+        alert(`Gol! ${data.side === "left" ? "Sol takım" : "Sağ takım"} sayı yaptı!`);
+      }
+
+      if (data.type === "matchEnd") {
+        matchEnded = true;
+        matchEndMsg.style.display = "block";
+        matchEndMsg.textContent = `Maç bitti! Skor: ${data.score.left} - ${data.score.right}\n\nAna ekrana dönülüyor...`;
+        setTimeout(() => {
+          matchEndMsg.style.display = "none";
+          gameDiv.style.display = "none";
+          loginDiv.style.display = "block";
+          loginMsg.textContent = "";
+          // Nick ve roomId inputları koru (hatırla)
+          nicknameInput.value = nickname;
+          roomIdInput.value = roomId;
+          matchEnded = false;
+        }, 10000);
+      }
     };
 
     socket.onerror = (e) => {
@@ -115,8 +219,7 @@
     };
 
     socket.onclose = () => {
-      console.log("WebSocket kapandı");
-      alert("Bağlantı koptu! Sayfayı yenileyin.");
+      if (!matchEnded) alert("Bağlantı koptu! Sayfayı yenileyin.");
     };
   }
 
@@ -146,13 +249,14 @@
 
   let x = 100;
   let y = 100;
-  const speed = 5;
+  const speed = 7;
 
   function sendMove(action = null) {
     socket.send(JSON.stringify({ type: "move", x, y, action }));
   }
 
   document.addEventListener("keydown", e => {
+    if (matchEnded) return;
     let oldX = x, oldY = y;
     switch (e.key) {
       case "ArrowUp":
@@ -163,7 +267,7 @@
       case "ArrowDown":
       case "s":
       case "S":
-        y = Math.min(360, y + speed);
+        y = Math.min(FIELD_HEIGHT - 40, y + speed);
         break;
       case "ArrowLeft":
       case "a":
@@ -173,7 +277,7 @@
       case "ArrowRight":
       case "d":
       case "D":
-        x = Math.min(760, x + speed);
+        x = Math.min(FIELD_WIDTH - 40, x + speed);
         break;
       case " ":
       case "0":
@@ -192,10 +296,11 @@
       loginMsg.textContent = "Lütfen nick ve parti ID girin!";
       return;
     }
+    saveNick(nickname);
     loginMsg.textContent = "";
     loginDiv.style.display = "none";
     gameDiv.style.display = "block";
-    x = 100; y = 100; // Başlangıç pozisyonu
+    x = 100; y = 100;
     connect();
   };
 
