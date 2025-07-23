@@ -91,6 +91,7 @@
       font-size: 28px;
       display: none;
       z-index: 10;
+      white-space: pre-line;
     }
   </style>
 </head>
@@ -114,7 +115,12 @@
 </div>
 
 <script>
+  const FIELD_WIDTH = 1000;
+  const FIELD_HEIGHT = 600;
+
+  // Render veya kendi sunucu WebSocket URL’n burada:
   const socketUrl = "wss://hackball-server.onrender.com";
+
   let socket;
 
   const nicknameInput = document.getElementById("nickname");
@@ -136,13 +142,14 @@
   let ball = { x: 485, y: 285 };
   let matchEnded = false;
 
-  // Eğer localStorage varsa nick kaydet
+  // Nickname’i localStorage’a kaydet
   function saveNick(nick) {
     try {
       localStorage.setItem('hackballNick', nick);
     } catch {}
   }
 
+  // Nickname’i yükle
   function loadNick() {
     try {
       return localStorage.getItem('hackballNick') || "";
@@ -206,7 +213,6 @@
           gameDiv.style.display = "none";
           loginDiv.style.display = "block";
           loginMsg.textContent = "";
-          // Nick ve roomId inputları koru (hatırla)
           nicknameInput.value = nickname;
           roomIdInput.value = roomId;
           matchEnded = false;
@@ -252,31 +258,29 @@
   const speed = 7;
 
   function sendMove(action = null) {
-    socket.send(JSON.stringify({ type: "move", x, y, action }));
+    if(socket.readyState === WebSocket.OPEN){
+      socket.send(JSON.stringify({ type: "move", x, y, action }));
+    }
   }
 
   document.addEventListener("keydown", e => {
     if (matchEnded) return;
     let oldX = x, oldY = y;
-    switch (e.key) {
-      case "ArrowUp":
+    switch (e.key.toLowerCase()) {
+      case "arrowup":
       case "w":
-      case "W":
         y = Math.max(0, y - speed);
         break;
-      case "ArrowDown":
+      case "arrowdown":
       case "s":
-      case "S":
         y = Math.min(FIELD_HEIGHT - 40, y + speed);
         break;
-      case "ArrowLeft":
+      case "arrowleft":
       case "a":
-      case "A":
         x = Math.max(0, x - speed);
         break;
-      case "ArrowRight":
+      case "arrowright":
       case "d":
-      case "D":
         x = Math.min(FIELD_WIDTH - 40, x + speed);
         break;
       case " ":
