@@ -60,9 +60,9 @@
     .ball {
       width: 30px;
       height: 30px;
-      background: orange;
-      border: 2px solid #ffa500;
-      box-shadow: 0 0 10px orange;
+      background: #39ff14; /* neon yeşil */
+      border: 2px solid #00cc00;
+      box-shadow: 0 0 15px #39ff14;
     }
     #scoreboard {
       margin-top: 10px;
@@ -118,7 +118,6 @@
   const FIELD_WIDTH = 1000;
   const FIELD_HEIGHT = 600;
 
-  // Render veya kendi sunucu WebSocket URL’n burada:
   const socketUrl = "wss://hackball-server.onrender.com";
 
   let socket;
@@ -174,34 +173,21 @@
       if (data.type === "players") {
         players = {};
         data.players.forEach(p => {
-          if (!players[p]) {
-            players[p] = { x: 100, y: 100 };
-          }
+          players[p.nickname] = { x: p.x, y: p.y };
         });
         renderPlayers();
       }
 
-      if (data.type === "move") {
-        if (players[data.nickname]) {
-          players[data.nickname].x = data.x;
-          players[data.nickname].y = data.y;
-          renderPlayers();
-        }
-      }
-
-      if (data.type === "score") {
+      if (data.type === "update") {
+        players = {};
+        data.players.forEach(p => {
+          players[p.nickname] = { x: p.x, y: p.y };
+        });
         score = data.score;
+        ball = data.ball;
         scoreboard.textContent = `${score.left} - ${score.right}`;
-      }
-
-      if (data.type === "ball") {
-        ball.x = data.x;
-        ball.y = data.y;
+        renderPlayers();
         renderBall();
-      }
-
-      if (data.type === "goal") {
-        alert(`Gol! ${data.side === "left" ? "Sol takım" : "Sağ takım"} sayı yaptı!`);
       }
 
       if (data.type === "matchEnd") {
@@ -257,41 +243,58 @@
   let y = 100;
   const speed = 7;
 
-  function sendMove(action = null) {
-    if(socket.readyState === WebSocket.OPEN){
-      socket.send(JSON.stringify({ type: "move", x, y, action }));
+  const keysPressed = {};
+
+  document.addEventListener("keydown", e => {
+    keysPressed[e.key.toLowerCase()] = true;
+    updateMovement();
+  });
+
+  document.addEventListener("keyup", e => {
+    keysPressed[e.key.toLowerCase()] = false;
+  });
+
+  function updateMovement() {
+    if (matchEnded) return;
+    let oldX = x, oldY = y;
+
+    if (keysPressed["arrowup"] || keysPressed["w"]) {
+      y = Math.max(0, y - speed);
+    }
+    if (keysPressed["arrowdown"] || keysPressed["s"]) {
+      y = Math.min(FIELD_HEIGHT - 40, y + speed);
+    }
+    if (keysPressed["arrowleft"] || keysPressed["a"]) {
+      x = Math.max(0, x - speed);
+    }
+    if (keysPressed["arrowright"] || keysPressed["d"]) {
+      x = Math.min(FIELD_WIDTH - 40, x + speed);
+    }
+
+    // Topa çarpma kontrolü:
+    if (isColliding(x, y, ball.x, ball.y)) {
+      x = oldX;
+      y = oldY;
+    }
+
+    sendMove();
+
+    if (keysPressed[" "] || keysPressed["0"]) {
+      sendMove("kick");
     }
   }
 
-  document.addEventListener("keydown", e => {
-    if (matchEnded) return;
-    let oldX = x, oldY = y;
-    switch (e.key.toLowerCase()) {
-      case "arrowup":
-      case "w":
-        y = Math.max(0, y - speed);
-        break;
-      case "arrowdown":
-      case "s":
-        y = Math.min(FIELD_HEIGHT - 40, y + speed);
-        break;
-      case "arrowleft":
-      case "a":
-        x = Math.max(0, x - speed);
-        break;
-      case "arrowright":
-      case "d":
-        x = Math.min(FIELD_WIDTH - 40, x + speed);
-        break;
-      case " ":
-      case "0":
-        sendMove("kick");
-        return;
+  function isColliding(px, py, bx, by, pr=20, br=15) {
+    let dx = (px + pr) - (bx + br);
+    let dy = (py + pr) - (by + br);
+    return dx * dx + dy * dy < (pr + br) * (pr + br);
+  }
+
+  function sendMove(action = null) {
+    if(socket && socket.readyState === WebSocket.OPEN){
+      socket.send(JSON.stringify({ type: "move", x, y, action }));
     }
-    if (oldX !== x || oldY !== y) {
-      sendMove();
-    }
-  });
+  }
 
   joinBtn.onclick = () => {
     nickname = nicknameInput.value.trim();
