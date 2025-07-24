@@ -4,159 +4,210 @@
   <meta charset="UTF-8" />
   <title>HackBall</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body, html { width: 100%; height: 100%; font-family: sans-serif; background: #222; color: white; overflow: hidden; }
-
-    canvas { display: block; margin: auto; background: green; border: 4px solid white; }
-
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+      background: #222;
+      color: white;
+    }
     #gui, #escMenu {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.8); display: flex;
-      align-items: center; justify-content: center; flex-direction: column;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 300px;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.8);
+      padding: 20px;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #escMenu { display: none; }
+
+    canvas {
+      display: block;
     }
 
-    #gui input, #gui button, #escMenu button {
-      margin: 10px; padding: 10px 20px; font-size: 16px;
+    button, input {
+      padding: 8px;
+      border: none;
+      border-radius: 5px;
     }
-
-    #escMenu {
-      display: none;
-      text-align: center;
+    #gameInfo {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.6);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
     }
-
-    .playerList {
-      background: #333; padding: 10px; border-radius: 5px;
-      margin: 5px 0;
-    }
-
-    .teamBtn { margin-left: 10px; cursor: pointer; }
   </style>
 </head>
 <body>
 
-  <div id="gui">
-    <h1>HackBall</h1>
-    <input id="nickname" placeholder="Nickiniz" />
-    <button onclick="createParty()">🎉 Parti Oluştur</button>
-    <input id="joinCode" placeholder="Parti ID'si" />
-    <button onclick="joinParty()">🔗 Partiye Katıl</button>
-  </div>
+<div id="gui">
+  <input id="nameInput" placeholder="Adınız" />
+  <input id="partyIdInput" placeholder="Parti ID (katılmak için)" />
+  <select id="teamSelect">
+    <option value="red">Kırmızı</option>
+    <option value="blue">Mavi</option>
+  </select>
+  <button onclick="createParty()">Parti Oluştur</button>
+  <button onclick="joinParty()">Partiye Katıl</button>
+</div>
 
-  <div id="escMenu">
-    <h2>Parti Menüsü</h2>
-    <div id="partyIdDisplay"></div>
-    <div id="players"></div>
-    <button onclick="closeEscMenu()">ESC ile kapat</button>
-  </div>
+<div id="escMenu">
+  <h3>ESC Menüsü</h3>
+  <div id="partyIdDisplay"></div>
+  <div id="playerList"></div>
+  <button onclick="hideEsc()">Menüyü Kapat</button>
+</div>
 
-  <canvas id="gameCanvas" width="960" height="540"></canvas>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="gameInfo"></div>
 
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-  <script>
-    const socket = io();
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    let nickname = "";
-    let isLeader = false;
-    let playerId = "";
-    let partyId = "";
-    let players = [];
-    let ball = { x: 480, y: 270, vx: 0, vy: 0 };
-    const radius = 20;
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+let playerId = null;
+let party = null;
+let keys = {};
+let myPlayer = null;
 
-    function createParty() {
-      nickname = document.getElementById('nickname').value;
-      socket.emit('createParty', nickname);
+document.addEventListener("keydown", (e) => {
+  keys[e.key] = true;
+  if (e.key === "Escape") toggleEsc();
+});
+document.addEventListener("keyup", (e) => keys[e.key] = false);
+
+function createParty() {
+  const name = document.getElementById("nameInput").value;
+  const team = document.getElementById("teamSelect").value;
+  socket.emit("createParty", { name, team });
+  document.getElementById("gui").style.display = "none";
+}
+
+function joinParty() {
+  const name = document.getElementById("nameInput").value;
+  const team = document.getElementById("teamSelect").value;
+  const partyId = document.getElementById("partyIdInput").value.trim().toUpperCase();
+  socket.emit("joinParty", { name, team, partyId });
+  document.getElementById("gui").style.display = "none";
+}
+
+function toggleEsc() {
+  const esc = document.getElementById("escMenu");
+  esc.style.display = esc.style.display === "none" ? "block" : "none";
+  updateEscMenu();
+}
+
+function hideEsc() {
+  document.getElementById("escMenu").style.display = "none";
+}
+
+function updateEscMenu() {
+  if (!party) return;
+  document.getElementById("partyIdDisplay").innerText = "Parti ID: " + party.id;
+  const list = Object.values(party.players).map(p => {
+    const isLeader = p.isLeader ? " 👑" : "";
+    return `<div>${p.name} [${p.team}]${isLeader}</div>`;
+  }).join("");
+  document.getElementById("playerList").innerHTML = list;
+}
+
+socket.on("partyData", (data) => {
+  party = data;
+  playerId = socket.id;
+  myPlayer = party.players[playerId];
+  updateEscMenu();
+});
+
+socket.on("kicked", () => {
+  alert("Partiden atıldınız.");
+  location.reload();
+});
+
+socket.on("matchEnd", () => {
+  alert("Maç bitti! 6 dakika doldu.");
+});
+
+let lastTime = 0;
+function gameLoop(timestamp) {
+  requestAnimationFrame(gameLoop);
+  if (!party || !myPlayer) return;
+
+  const dt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+
+  // Oyuncu hareketi
+  let speed = 200;
+  if (keys["Shift"]) speed *= 1.5;
+
+  if (keys["w"] || keys["ArrowUp"]) myPlayer.y -= speed * dt;
+  if (keys["s"] || keys["ArrowDown"]) myPlayer.y += speed * dt;
+  if (keys["a"] || keys["ArrowLeft"]) myPlayer.x -= speed * dt;
+  if (keys["d"] || keys["ArrowRight"]) myPlayer.x += speed * dt;
+
+  // Sınırlar
+  myPlayer.x = Math.max(0, Math.min(800, myPlayer.x));
+  myPlayer.y = Math.max(0, Math.min(600, myPlayer.y));
+
+  socket.emit("move", { x: myPlayer.x, y: myPlayer.y });
+
+  // Topa vurma
+  if (keys[" "] || keys["0"]) {
+    const dx = party.ball.x - myPlayer.x;
+    const dy = party.ball.y - myPlayer.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 50) {
+      const forceX = -dx / dist * 5;
+      const forceY = -dy / dist * 5;
+      socket.emit("kickBall", { forceX, forceY });
     }
+  }
+}
 
-    function joinParty() {
-      nickname = document.getElementById('nickname').value;
-      const code = document.getElementById('joinCode').value;
-      socket.emit('joinParty', { nickname, code });
-    }
+socket.on("gameState", (data) => {
+  party = data;
+  myPlayer = party.players[playerId];
+  drawGame();
+});
 
-    function closeEscMenu() {
-      document.getElementById('escMenu').style.display = 'none';
-    }
+function drawGame() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        document.getElementById('escMenu').style.display = 'flex';
-      }
-    });
+  // Saha çiz
+  ctx.fillStyle = "#3a3a3a";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    socket.on('joined', data => {
-      partyId = data.partyId;
-      playerId = data.id;
-      isLeader = data.isLeader;
-      document.getElementById('gui').style.display = 'none';
-      document.getElementById('partyIdDisplay').innerText = "Parti ID: " + partyId;
-    });
+  // Top çiz
+  const ball = party.ball;
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
+  ctx.fill();
 
-    socket.on('updateState', state => {
-      players = state.players;
-      ball = state.ball;
-      updatePlayerList(state.players);
-    });
+  // Oyuncular
+  for (let id in party.players) {
+    const p = party.players[id];
+    ctx.fillStyle = p.team === "red" ? "red" : "blue";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+    ctx.fill();
 
-    function updatePlayerList(players) {
-      const container = document.getElementById('players');
-      container.innerHTML = '';
-      players.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'playerList';
-        div.innerText = `${p.nickname} (${p.team})`;
-        if (isLeader && p.id !== playerId) {
-          const redBtn = document.createElement('button');
-          redBtn.innerText = "Kırmızı";
-          redBtn.onclick = () => socket.emit('changeTeam', { id: p.id, team: "red" });
+    ctx.fillStyle = "white";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(p.name, p.x - 15, p.y - 20);
+  }
+}
 
-          const blueBtn = document.createElement('button');
-          blueBtn.innerText = "Mavi";
-          blueBtn.onclick = () => socket.emit('changeTeam', { id: p.id, team: "blue" });
-
-          const kickBtn = document.createElement('button');
-          kickBtn.innerText = "At 🗑";
-          kickBtn.onclick = () => socket.emit('kick', p.id);
-
-          div.appendChild(redBtn);
-          div.appendChild(blueBtn);
-          div.appendChild(kickBtn);
-        }
-        container.appendChild(div);
-      });
-    }
-
-    let keys = {};
-    document.addEventListener('keydown', e => keys[e.key] = true);
-    document.addEventListener('keyup', e => keys[e.key] = false);
-
-    function gameLoop() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Draw ball
-      ctx.fillStyle = 'white';
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, 12, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw players
-      players.forEach(p => {
-        ctx.fillStyle = p.team === "red" ? "red" : "blue";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "white";
-        ctx.fillText(p.nickname, p.x - radius, p.y + radius + 12);
-      });
-
-      // Send input
-      socket.emit('input', keys);
-
-      requestAnimationFrame(gameLoop);
-    }
-
-    gameLoop();
-  </script>
+requestAnimationFrame(gameLoop);
+</script>
 </body>
 </html>
