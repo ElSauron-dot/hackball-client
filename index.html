@@ -1,168 +1,152 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8" />
-  <title>HackBall</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; font-family: sans-serif; }
-    canvas { display: block; margin: auto; background: #2b2; }
-
-    #teamSelect, #escMenu {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      background: #333;
-      padding: 20px;
-      border-radius: 10px;
-      color: white;
-      display: none;
-      z-index: 10;
-    }
-
-    #teamSelect button, .player-controls button {
-      margin: 5px;
-      padding: 10px;
-      font-size: 16px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-
-    .red { background: crimson; color: white; }
-    .blue { background: royalblue; color: white; }
-    .kick { background: #d33; }
-    .creator { color: gold; }
-
-    .player-controls {
-      display: flex;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .player-controls span {
-      flex-grow: 1;
-    }
-
-    #escMenu {
-      width: 300px;
-    }
-
-    #partyId {
-      margin-top: 15px;
-      font-size: 14px;
-      color: #aaa;
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>HackBall Başlangıç</title>
+<style>
+  * { box-sizing: border-box; }
+  body, html {
+    margin:0; padding:0; height:100%; width:100%; background:#222; color:#eee; font-family: Arial, sans-serif;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #startScreen {
+    background:#333;
+    padding:30px;
+    border-radius:12px;
+    box-shadow:0 0 15px #000;
+    width:360px;
+    text-align:center;
+  }
+  #startScreen h2 {
+    margin-bottom: 20px;
+    font-weight: 700;
+  }
+  input[type=text] {
+    width:100%;
+    padding:10px;
+    margin-bottom:15px;
+    border-radius:6px;
+    border:none;
+    font-size:16px;
+  }
+  button {
+    padding: 12px 20px;
+    border:none;
+    background: #e03e3e;
+    color: white;
+    font-weight: 700;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    margin: 5px;
+    flex: 1;
+  }
+  button:hover {
+    background: #b92b2b;
+  }
+  .team-select {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 15px;
+  }
+  .team-select label {
+    cursor: pointer;
+    user-select: none;
+  }
+  .team-select input[type=radio] {
+    margin-right: 6px;
+  }
+  #errorMsg {
+    color: #ff5555;
+    margin-bottom: 10px;
+    display: none;
+  }
+  #btnContainer {
+    display: flex;
+  }
+</style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="800" height="500"></canvas>
 
-  <div id="teamSelect">
-    <h2>Takım Seç</h2>
-    <button class="red" onclick="selectTeam('red')">Kırmızı Takım</button>
-    <button class="blue" onclick="selectTeam('blue')">Mavi Takım</button>
+<div id="startScreen">
+  <h2>HackBall'a Hoşgeldin</h2>
+
+  <div id="errorMsg"></div>
+
+  <input type="text" id="nicknameInput" placeholder="Takma adınız" maxlength="15" autocomplete="off" />
+
+  <input type="text" id="partyIdInput" placeholder="Parti ID (katılmak için yazın)" maxlength="10" autocomplete="off" />
+
+  <div class="team-select">
+    <label><input type="radio" name="team" value="red" checked /> Kırmızı Takım</label>
+    <label><input type="radio" name="team" value="blue" /> Mavi Takım</label>
   </div>
 
-  <div id="escMenu"></div>
+  <div id="btnContainer">
+    <button id="createPartyBtn">Parti Oluştur</button>
+    <button id="joinPartyBtn">Partiye Katıl</button>
+  </div>
+</div>
 
-  <script>
-    const socket = new WebSocket(location.origin.replace("http", "ws").replace(":3000", "") + "/ws");
+<script>
+  const nicknameInput = document.getElementById('nicknameInput');
+  const partyIdInput = document.getElementById('partyIdInput');
+  const createPartyBtn = document.getElementById('createPartyBtn');
+  const joinPartyBtn = document.getElementById('joinPartyBtn');
+  const errorMsg = document.getElementById('errorMsg');
 
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.style.display = 'block';
+  }
+  function hideError() {
+    errorMsg.style.display = 'none';
+  }
 
-    let nickname = localStorage.getItem("nickname") || prompt("Nick'in nedir?");
-    localStorage.setItem("nickname", nickname);
+  function validateNickname(nick) {
+    return nick && nick.length > 0 && nick.length <= 15;
+  }
+  function validatePartyId(id) {
+    return /^[a-zA-Z0-9]{3,10}$/.test(id);
+  }
 
-    let playerId, players = {}, ball = {}, partyId = "";
-    let showMenu = false;
-    let isCreator = false;
-    let team = null;
-
-    document.addEventListener("keydown", e => {
-      if (e.key === "Escape") {
-        showMenu = !showMenu;
-        updateEscMenu();
-      }
-    });
-
-    document.addEventListener("keydown", e => socket.send(JSON.stringify({ type: "keydown", key: e.key })));
-    document.addEventListener("keyup", e => socket.send(JSON.stringify({ type: "keyup", key: e.key })));
-
-    function selectTeam(selectedTeam) {
-      team = selectedTeam;
-      document.getElementById("teamSelect").style.display = "none";
-      socket.send(JSON.stringify({ type: "join", nickname, team }));
+  createPartyBtn.addEventListener('click', () => {
+    const nick = nicknameInput.value.trim();
+    if (!validateNickname(nick)) {
+      showError("Lütfen geçerli bir takma ad girin (1-15 karakter).");
+      return;
     }
+    hideError();
+    startGame({ nickname: nick, partyId: null, team: getSelectedTeam() });
+  });
 
-    socket.addEventListener("open", () => {
-      document.getElementById("teamSelect").style.display = "block";
-    });
-
-    socket.addEventListener("message", event => {
-      const data = JSON.parse(event.data);
-      if (data.type === "state") {
-        players = data.players;
-        ball = data.ball;
-        playerId = data.id;
-        partyId = data.partyId;
-        isCreator = data.creator === playerId;
-      }
-    });
-
-    function updateEscMenu() {
-      const escMenu = document.getElementById("escMenu");
-      escMenu.innerHTML = `<h3>Oyuncular</h3>`;
-      Object.entries(players).forEach(([id, p], i) => {
-        const creatorClass = id === playerId && isCreator ? "creator" : "";
-        escMenu.innerHTML += `
-          <div class="player-controls">
-            <span class="${creatorClass}">${p.nickname}</span>
-            ${isCreator && id !== playerId ? `
-              <button class="red" onclick="changeTeam('${id}', 'red')">K</button>
-              <button class="blue" onclick="changeTeam('${id}', 'blue')">M</button>
-              <button class="kick" onclick="kickPlayer('${id}')">×</button>
-            ` : ""}
-          </div>`;
-      });
-      escMenu.innerHTML += `<div id="partyId">Parti ID: ${partyId}</div>`;
-      escMenu.style.display = showMenu ? "block" : "none";
+  joinPartyBtn.addEventListener('click', () => {
+    const nick = nicknameInput.value.trim();
+    const partyId = partyIdInput.value.trim();
+    if (!validateNickname(nick)) {
+      showError("Lütfen geçerli bir takma ad girin (1-15 karakter).");
+      return;
     }
-
-    function changeTeam(id, team) {
-      socket.send(JSON.stringify({ type: "changeTeam", id, team }));
+    if (!validatePartyId(partyId)) {
+      showError("Geçerli bir Parti ID girin (3-10 alfanümerik karakter).");
+      return;
     }
+    hideError();
+    startGame({ nickname: nick, partyId, team: getSelectedTeam() });
+  });
 
-    function kickPlayer(id) {
-      socket.send(JSON.stringify({ type: "kick", id }));
-    }
+  function getSelectedTeam() {
+    return document.querySelector('input[name="team"]:checked').value;
+  }
 
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+  function startGame({ nickname, partyId, team }) {
+    // Örnek olarak alert ile gösteriyoruz, sen socket bağla
+    alert(`Başlıyorsun!\nNick: ${nickname}\nParti ID: ${partyId || '(yeni parti oluşturulacak)'}\nTakım: ${team}`);
 
-      // Ball
-      ctx.beginPath();
-      ctx.arc(ball.x || 0, ball.y || 0, 12, 0, Math.PI * 2);
-      ctx.fillStyle = "white";
-      ctx.fill();
+    // Buraya socket bağlantısını koyabilirsin, ya da sayfayı değiştir:
+    // window.location.href = `game.html?nick=${encodeURIComponent(nickname)}&party=${partyId || ''}&team=${team}`;
+  }
+</script>
 
-      // Players
-      Object.values(players).forEach(p => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-        ctx.fillStyle = p.team === "red" ? "crimson" : "royalblue";
-        ctx.fill();
-        ctx.fillStyle = "black";
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(p.nickname, p.x, p.y - 20);
-      });
-
-      requestAnimationFrame(draw);
-    }
-
-    draw();
-  </script>
 </body>
 </html>
