@@ -1,213 +1,123 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>HackBall</title>
   <style>
-    html, body {
+    body {
       margin: 0;
-      padding: 0;
       overflow: hidden;
-      font-family: sans-serif;
-      background: #222;
-      color: white;
+      background: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
     }
-    #gui, #escMenu {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 300px;
-      transform: translate(-50%, -50%);
-      background: rgba(0, 0, 0, 0.8);
-      padding: 20px;
-      border-radius: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    #escMenu { display: none; }
-
-    canvas {
-      display: block;
-    }
-
-    button, input {
-      padding: 8px;
-      border: none;
-      border-radius: 5px;
-    }
-    #gameInfo {
+    #scoreboard {
       position: absolute;
       top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.6);
-      padding: 10px;
-      border-radius: 8px;
-      font-size: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 24px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 8px 16px;
+      border-radius: 12px;
     }
   </style>
 </head>
 <body>
+  <canvas id="game" width="800" height="600"></canvas>
+  <div id="scoreboard">🔵 0 - 0 🔴</div>
 
-<div id="gui">
-  <input id="nameInput" placeholder="Adınız" />
-  <input id="partyIdInput" placeholder="Parti ID (katılmak için)" />
-  <select id="teamSelect">
-    <option value="red">Kırmızı</option>
-    <option value="blue">Mavi</option>
-  </select>
-  <button onclick="createParty()">Parti Oluştur</button>
-  <button onclick="joinParty()">Partiye Katıl</button>
-</div>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io("https://hackball-server.onrender.com"); // WAN sunucun
 
-<div id="escMenu">
-  <h3>ESC Menüsü</h3>
-  <div id="partyIdDisplay"></div>
-  <div id="playerList"></div>
-  <button onclick="hideEsc()">Menüyü Kapat</button>
-</div>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
 
-<canvas id="gameCanvas" width="800" height="600"></canvas>
-<div id="gameInfo"></div>
+    const keys = {};
+    const speed = 4;
+    let myId = null;
+    let players = {};
+    let ball = { x: 400, y: 300 };
+    let scores = { red: 0, blue: 0 };
 
-<script src="/socket.io/socket.io.js"></script>
-<script>
-const socket = io();
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-let playerId = null;
-let party = null;
-let keys = {};
-let myPlayer = null;
+    // Tuş kontrolleri
+    document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+    document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
-document.addEventListener("keydown", (e) => {
-  keys[e.key] = true;
-  if (e.key === "Escape") toggleEsc();
-});
-document.addEventListener("keyup", (e) => keys[e.key] = false);
+    // Başlangıç verileri
+    socket.on("init", data => {
+      myId = data.id;
+      players = data.players;
+      ball = data.ball;
+      scores = data.scores;
+    });
 
-function createParty() {
-  const name = document.getElementById("nameInput").value;
-  const team = document.getElementById("teamSelect").value;
-  socket.emit("createParty", { name, team });
-  document.getElementById("gui").style.display = "none";
-}
+    // Yeni oyuncu eklendi
+    socket.on("playerJoined", ({ id, data }) => {
+      players[id] = data;
+    });
 
-function joinParty() {
-  const name = document.getElementById("nameInput").value;
-  const team = document.getElementById("teamSelect").value;
-  const partyId = document.getElementById("partyIdInput").value.trim().toUpperCase();
-  socket.emit("joinParty", { name, team, partyId });
-  document.getElementById("gui").style.display = "none";
-}
+    // Oyuncu ayrıldı
+    socket.on("playerLeft", id => {
+      delete players[id];
+    });
 
-function toggleEsc() {
-  const esc = document.getElementById("escMenu");
-  esc.style.display = esc.style.display === "none" ? "block" : "none";
-  updateEscMenu();
-}
+    // Sunucudan gelen anlık durum
+    socket.on("state", data => {
+      players = data.players;
+      ball = data.ball;
+      scores = data.scores;
+      updateScoreboard();
+    });
 
-function hideEsc() {
-  document.getElementById("escMenu").style.display = "none";
-}
-
-function updateEscMenu() {
-  if (!party) return;
-  document.getElementById("partyIdDisplay").innerText = "Parti ID: " + party.id;
-  const list = Object.values(party.players).map(p => {
-    const isLeader = p.isLeader ? " 👑" : "";
-    return `<div>${p.name} [${p.team}]${isLeader}</div>`;
-  }).join("");
-  document.getElementById("playerList").innerHTML = list;
-}
-
-socket.on("partyData", (data) => {
-  party = data;
-  playerId = socket.id;
-  myPlayer = party.players[playerId];
-  updateEscMenu();
-});
-
-socket.on("kicked", () => {
-  alert("Partiden atıldınız.");
-  location.reload();
-});
-
-socket.on("matchEnd", () => {
-  alert("Maç bitti! 6 dakika doldu.");
-});
-
-let lastTime = 0;
-function gameLoop(timestamp) {
-  requestAnimationFrame(gameLoop);
-  if (!party || !myPlayer) return;
-
-  const dt = (timestamp - lastTime) / 1000;
-  lastTime = timestamp;
-
-  // Oyuncu hareketi
-  let speed = 200;
-  if (keys["Shift"]) speed *= 1.5;
-
-  if (keys["w"] || keys["ArrowUp"]) myPlayer.y -= speed * dt;
-  if (keys["s"] || keys["ArrowDown"]) myPlayer.y += speed * dt;
-  if (keys["a"] || keys["ArrowLeft"]) myPlayer.x -= speed * dt;
-  if (keys["d"] || keys["ArrowRight"]) myPlayer.x += speed * dt;
-
-  // Sınırlar
-  myPlayer.x = Math.max(0, Math.min(800, myPlayer.x));
-  myPlayer.y = Math.max(0, Math.min(600, myPlayer.y));
-
-  socket.emit("move", { x: myPlayer.x, y: myPlayer.y });
-
-  // Topa vurma
-  if (keys[" "] || keys["0"]) {
-    const dx = party.ball.x - myPlayer.x;
-    const dy = party.ball.y - myPlayer.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 50) {
-      const forceX = -dx / dist * 5;
-      const forceY = -dy / dist * 5;
-      socket.emit("kickBall", { forceX, forceY });
+    function updateScoreboard() {
+      const scoreText = `🔵 ${scores.blue} - ${scores.red} 🔴`;
+      document.getElementById("scoreboard").innerText = scoreText;
     }
-  }
-}
 
-socket.on("gameState", (data) => {
-  party = data;
-  myPlayer = party.players[playerId];
-  drawGame();
-});
+    function gameLoop() {
+      // Ekranı temizle
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-function drawGame() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Kale çiz
+      ctx.fillStyle = "blue";
+      ctx.fillRect(0, 200, 40, 200);
+      ctx.fillStyle = "red";
+      ctx.fillRect(760, 200, 40, 200);
 
-  // Saha çiz
-  ctx.fillStyle = "#3a3a3a";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Oyuncu hareketi
+      if (myId && players[myId]) {
+        const me = players[myId];
+        if (keys["arrowup"] || keys["w"]) me.y -= speed;
+        if (keys["arrowdown"] || keys["s"]) me.y += speed;
+        if (keys["arrowleft"] || keys["a"]) me.x -= speed;
+        if (keys["arrowright"] || keys["d"]) me.x += speed;
 
-  // Top çiz
-  const ball = party.ball;
-  ctx.fillStyle = "white";
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-  ctx.fill();
+        socket.emit("move", { x: me.x, y: me.y });
+      }
 
-  // Oyuncular
-  for (let id in party.players) {
-    const p = party.players[id];
-    ctx.fillStyle = p.team === "red" ? "red" : "blue";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-    ctx.fill();
+      // Tüm oyuncuları çiz
+      for (let id in players) {
+        const p = players[id];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.stroke();
+      }
 
-    ctx.fillStyle = "white";
-    ctx.font = "12px sans-serif";
-    ctx.fillText(p.name, p.x - 15, p.y - 20);
-  }
-}
+      // Topu çiz
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
 
-requestAnimationFrame(gameLoop);
-</script>
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+  </script>
 </body>
 </html>
