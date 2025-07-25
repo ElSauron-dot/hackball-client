@@ -51,8 +51,8 @@ const WIDTH = 600, HEIGHT = 400, GOAL = 100;
 
 let ws, players = [], ball = {}, scores = {}, myId = '', isHost = false, roomId = '';
 let keys = {};
-const PLAYER_SPEED_BASE = 4; // Orijinal hız
-const PLAYER_SPEED = PLAYER_SPEED_BASE * 0.6; // %60 hıza düşür
+const PLAYER_SPEED_BASE = 4;
+const PLAYER_SPEED = PLAYER_SPEED_BASE * 0.6;
 
 function create() {
   const nick = document.getElementById('nickname').value.trim();
