@@ -14,6 +14,7 @@
     display:none; position:fixed; top:10%; left:50%; transform:translateX(-50%);
     background:#333; padding:20px; border:2px solid lime; border-radius:10px; z-index:100;
     max-width:300px;
+    color: white;
   }
   #adminMenu button { margin-left: 10px; }
 </style>
@@ -50,8 +51,9 @@ const WIDTH = 600, HEIGHT = 400, GOAL = 100;
 
 let ws, players = [], ball = {}, scores = {}, myId = '', isHost = false, roomId = '';
 let keys = {};
+const PLAYER_SPEED_BASE = 4; // Orijinal hız
+const PLAYER_SPEED = PLAYER_SPEED_BASE * 0.6; // %60 hıza düşür
 
-// Oda oluştur
 function create() {
   const nick = document.getElementById('nickname').value.trim();
   if (!nick) return alert('Takma ad gerekli');
@@ -62,7 +64,6 @@ function create() {
   document.getElementById('roomCode').innerText = roomId;
 }
 
-// Odaya katıl
 function join() {
   const nick = document.getElementById('nickname').value.trim();
   const rid = document.getElementById('roomId').value.trim();
@@ -74,7 +75,6 @@ function join() {
   connect();
 }
 
-// Oyunu başlat (host)
 function start() {
   document.getElementById('roomDisplay').style.display = 'none';
   document.getElementById('game').style.display = 'block';
@@ -82,7 +82,6 @@ function start() {
   if (isHost) document.getElementById('adminMenu').style.display = 'block';
 }
 
-// WebSocket bağlantısı
 function connect() {
   ws = new WebSocket('wss://hackball-server.onrender.com');
   ws.onopen = () => {
@@ -125,7 +124,6 @@ function connect() {
   requestAnimationFrame(draw);
 }
 
-// Hareket verisini sunucuya gönder
 function sendMovement() {
   if (!ws || ws.readyState !== 1) return;
 
@@ -140,7 +138,6 @@ function sendMovement() {
     return;
   }
 
-  // Normalize et (çapraz akıcı hareket için)
   const len = Math.sqrt(dx * dx + dy * dy);
   dx /= len;
   dy /= len;
@@ -148,7 +145,6 @@ function sendMovement() {
   ws.send(JSON.stringify({ type: 'move', dx, dy }));
 }
 
-// Yönetici panelini güncelle
 function updateAdmin() {
   document.getElementById('adminRoomId').innerText = roomId;
   const div = document.getElementById('playersAdmin');
@@ -164,43 +160,35 @@ function updateAdmin() {
   });
 }
 
-// Takım değiştir
 function changeTeam(id) {
-  ws.send(JSON.stringify({ type: 'changeTeam', target: id }));
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'changeTeam', target: id }));
 }
 
-// Oyuncu at
 function kickPlayer(id) {
-  ws.send(JSON.stringify({ type: 'kickPlayer', target: id }));
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'kickPlayer', target: id }));
 }
 
-// Yönetici menüsünü kapat
 function closeAdmin() {
   document.getElementById('adminMenu').style.display = 'none';
 }
 
-// Çizim fonksiyonu
 function draw() {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-  // Kale
   ctx.fillStyle = 'gray';
   ctx.fillRect(0, HEIGHT / 2 - GOAL / 2, 10, GOAL);
   ctx.fillRect(WIDTH - 10, HEIGHT / 2 - GOAL / 2, 10, GOAL);
 
-  // Skorlar
   ctx.fillStyle = 'white';
   ctx.font = '20px Arial';
   ctx.fillText(`KIRMIZI: ${scores.team1 || 0}`, 50, 30);
   ctx.fillText(`MAVİ: ${scores.team2 || 0}`, WIDTH - 150, 30);
 
-  // Top
   ctx.fillStyle = 'white';
   ctx.beginPath();
-  ctx.arc(ball.x || WIDTH/2, ball.y || HEIGHT/2, ball.radius || 10, 0, Math.PI * 2);
+  ctx.arc(ball.x || WIDTH / 2, ball.y || HEIGHT / 2, ball.radius || 10, 0, Math.PI * 2);
   ctx.fill();
 
-  // Oyuncular
   ctx.font = '14px Arial';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
