@@ -1,306 +1,155 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8" />
-  <title>HackBall Multiplayer</title>
+  <meta charset="UTF-8">
+  <title>HackBall</title>
   <style>
-    body {
-      margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center;
+    canvas {
+      border: 2px solid black;
+      background: #0b3d91;
+      display: block;
+      margin: 0 auto;
     }
-    #lobby, #roomDisplay, #escMenu {
-      padding-top: 50px;
-    }
-    #game {
-      display: none; margin: 20px auto; background: #222; border: 2px solid #fff;
-    }
-    input, button {
-      padding: 10px; margin: 10px; font-size: 16px; border-radius: 8px; border: none;
-    }
-    button {
-      cursor: pointer;
-    }
-    #escMenu {
+    #menu {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border: 1px solid #333;
       display: none;
-      position: fixed;
-      top: 20%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #222;
-      border: 2px solid #fff;
-      padding: 20px;
-      width: 300px;
-      z-index: 100;
-      text-align: left;
+      z-index: 10;
     }
-    #escMenu h2 {
-      margin-top: 0;
-      text-align: center;
-      color: lime;
-    }
-    #playersList {
-      max-height: 200px;
-      overflow-y: auto;
-      margin-bottom: 10px;
-    }
-    .playerItem {
-      display: flex;
-      justify-content: space-between;
-      margin: 4px 0;
-      color: white;
-    }
-    .playerItem button {
-      padding: 3px 6px;
-      font-size: 14px;
-      border-radius: 4px;
-      background-color: #444;
-      color: white;
-    }
-    .playerItem button:hover {
-      background-color: #666;
+    #menu button {
+      display: block;
+      margin: 5px 0;
     }
   </style>
 </head>
 <body>
+  <canvas id="game" width="800" height="600"></canvas>
+  <div id="menu">
+    <div><strong>Parti ID:</strong> <span id="partyIdText"></span></div>
+    <button onclick="changeTeam()">Takımı Değiştir</button>
+    <button onclick="kickPlayer()">Oyuncuyu At</button>
+    <button onclick="closeMenu()">Menüyü Kapat</button>
+  </div>
 
-<div id="lobby">
-  <h1>⚽ HackBall'a Hoş Geldin</h1>
-  <input type="text" id="nickname" placeholder="Takma adını yaz" /><br />
-  <input type="text" id="roomId" placeholder="Parti ID gir (örnek: abc123)" /><br />
-  <button onclick="joinGame()">Katıl</button>
-  <button onclick="createRoom()">Yeni Parti Oluştur</button>
-</div>
-
-<div id="roomDisplay" style="display:none;">
-  <h2>✅ Parti oluşturuldu!</h2>
-  <p>Bu parti ID'sini arkadaşlarınla paylaş:</p>
-  <h1 id="roomCodeDisplay" style="font-size: 36px; color: lime;"></h1>
-  <button onclick="startHostGame()">Oyunu Başlat</button>
-</div>
-
-<canvas id="game" width="600" height="400"></canvas>
-
-<!-- ESC menüsü sadece host için -->
-<div id="escMenu">
-  <h2>Parti Menü - ID: <span id="menuRoomId"></span></h2>
-  <div id="playersList"></div>
-  <button onclick="closeEscMenu()">Kapat</button>
-</div>
-
-<script>
-  const FIELD_WIDTH = 600;
-  const FIELD_HEIGHT = 400;
-  const GOAL_WIDTH = 100;
-
-  let nickname = '';
-  let roomId = '';
-  let ws = null;
-  let players = {};
-  let ball = { x: 300, y: 200, radius: 10 };
-  let scores = { team1: 0, team2: 0 };
-  let playerId = null;
-  let isHost = false;
-
-  let keysPressed = {};
-  let moveInterval;
-
-  function createRoom() {
-    nickname = document.getElementById('nickname').value.trim();
-    if (!nickname) return alert("Lütfen takma ad gir");
-
-    // 6 karakterli random ID
-    roomId = Math.random().toString(36).substring(2, 8).toLowerCase();
-    document.getElementById('lobby').style.display = 'none';
-    document.getElementById('roomDisplay').style.display = 'block';
-    document.getElementById('roomCodeDisplay').innerText = roomId;
-
-    isHost = true;
-  }
-
-  function startHostGame() {
-    connectWebSocket();
-    document.getElementById('roomDisplay').style.display = 'none';
-    document.getElementById('game').style.display = 'block';
-  }
-
-  function joinGame() {
-    nickname = document.getElementById('nickname').value.trim();
-    roomId = document.getElementById('roomId').value.trim().toLowerCase();
-    if (!nickname || !roomId) return alert("Lütfen hem takma ad hem parti ID gir");
-
-    connectWebSocket();
-    document.getElementById('lobby').style.display = 'none';
-    document.getElementById('game').style.display = 'block';
-  }
-
-  function connectWebSocket() {
-    ws = new WebSocket('wss://heckball-server.onrender.com'); // render adresi, wss olarak
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', nickname, roomId, isHost }));
-    };
-
-    ws.onmessage = event => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === 'error') {
-        alert(data.message);
-        location.reload();
-        return;
-      }
-
-      if (data.type === 'init') {
-        playerId = data.id;
-      }
-
-      if (data.type === 'gameState') {
-        players = {};
-        data.players.forEach(p => {
-          players[p.id] = p;
-        });
-        ball = data.ball;
-        scores = data.scores;
-      }
-    };
-
-    ws.onclose = () => {
-      alert('Sunucu bağlantısı kesildi!');
-      location.reload();
-    };
-
-    setupControls();
-    draw();
-  }
-
-  function setupControls() {
-    keysPressed = {};
-
-    window.addEventListener('keydown', e => {
-      if (e.repeat) return;
-
-      if (e.key === 'Escape' && isHost) {
-        toggleEscMenu();
-        return;
-      }
-
-      keysPressed[e.key.toLowerCase()] = true;
-      sendMovement();
-      
-      // Kick tuşları
-      if (e.code === 'Space' || e.code === 'Numpad0') {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'kick' }));
-        }
-      }
-    });
-
-    window.addEventListener('keyup', e => {
-      keysPressed[e.key.toLowerCase()] = false;
-      sendMovement();
-    });
-  }
-
-  function sendMovement() {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-    // W A S D veya ok tuşları ile yön vektörü
-    let dx = 0, dy = 0;
-    if (keysPressed['w'] || keysPressed['arrowup']) dy -= 1;
-    if (keysPressed['s'] || keysPressed['arrowdown']) dy += 1;
-    if (keysPressed['a'] || keysPressed['arrowleft']) dx -= 1;
-    if (keysPressed['d'] || keysPressed['arrowright']) dx += 1;
-
-    // Normalize et çapraz hareket düzgün olsun
-    if (dx !== 0 || dy !== 0) {
-      const len = Math.sqrt(dx * dx + dy * dy);
-      dx /= len;
-      dy /= len;
-    }
-
-    ws.send(JSON.stringify({ type: 'move', dx, dy }));
-  }
-
-  function draw() {
+  <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
+    const menu = document.getElementById('menu');
+    const partyIdText = document.getElementById('partyIdText');
 
-    ctx.clearRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
+    let ws;
+    let players = {};
+    let myId = null;
+    let myRoomId = null;
+    let ball = { x: 400, y: 300, radius: 10, vx: 0, vy: 0 };
+    let keys = {};
 
-    // Kale çizimi
-    ctx.fillStyle = 'gray';
-    ctx.fillRect(0, FIELD_HEIGHT / 2 - GOAL_WIDTH / 2, 10, GOAL_WIDTH);
-    ctx.fillRect(FIELD_WIDTH - 10, FIELD_HEIGHT / 2 - GOAL_WIDTH / 2, 10, GOAL_WIDTH);
+    const nickname = prompt("Takma ad:") || "Oyuncu";
+    let roomId = prompt("Parti ID (boşsa yeni oluşturulur):");
+    if (!roomId) roomId = Math.random().toString(36).substring(2, 8);
 
-    // Skor yazısı
-    ctx.fillStyle = 'white';
-    ctx.font = '20px Arial';
-    ctx.fillText(`KIRMIZI: ${scores.team1}`, 50, 30);
-    ctx.fillText(`MAVİ: ${scores.team2}`, FIELD_WIDTH - 150, 30);
+    ws = new WebSocket("wss://hackball-server.onrender.com");
 
-    // Topu çiz
-    ctx.fillStyle = 'white';
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-    ctx.fill();
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "join", roomId, nickname }));
+    };
 
-    // Oyuncuları çiz
-    ctx.font = '14px Arial';
-    ctx.textAlign = 'center';
-    for (const id in players) {
-      const p = players[id];
-      ctx.fillStyle = p.team === 1 ? 'red' : 'blue';
+    ws.onmessage = (msg) => {
+      const data = JSON.parse(msg.data);
+      if (data.type === "init") {
+        myId = data.id;
+        myRoomId = roomId;
+        partyIdText.textContent = myRoomId;
+      }
+      if (data.type === "gameState") {
+        players = data.players;
+        ball = data.ball;
+      }
+    };
+
+    function sendMove(dx, dy) {
+      ws.send(JSON.stringify({ type: "move", dx, dy }));
+    }
+
+    function sendKick() {
+      ws.send(JSON.stringify({ type: "kick" }));
+    }
+
+    function changeTeam() {
+      ws.send(JSON.stringify({ type: "changeTeam" }));
+    }
+
+    function kickPlayer() {
+      const id = prompt("Oyuncu ID'si:");
+      if (id) ws.send(JSON.stringify({ type: "kickPlayer", id }));
+    }
+
+    function closeMenu() {
+      menu.style.display = "none";
+    }
+
+    window.addEventListener("keydown", (e) => {
+      keys[e.key] = true;
+      if (e.key === "Escape" && players[myId]?.host) {
+        menu.style.display = menu.style.display === "none" ? "block" : "none";
+      }
+      if (e.code === "Space") sendKick();
+    });
+
+    window.addEventListener("keyup", (e) => {
+      keys[e.key] = false;
+    });
+
+    function gameLoop() {
+      // Hareket gönderme
+      let dx = 0, dy = 0;
+      if (keys["w"]) dy -= 1;
+      if (keys["s"]) dy += 1;
+      if (keys["a"]) dx -= 1;
+      if (keys["d"]) dx += 1;
+      if (dx !== 0 || dy !== 0) {
+        const len = Math.sqrt(dx * dx + dy * dy);
+        dx /= len; dy /= len;
+        sendMove(dx, dy);
+      }
+
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Saha çiz
+      ctx.fillStyle = "#0b3d91";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Oyuncular
+      ctx.font = "14px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      for (let id in players) {
+        const p = players[id];
+        ctx.fillStyle = p.team === 1 ? "red" : "blue";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "white";
+        ctx.fillText(p.nickname || "", p.x, p.y + 18);
+      }
+
+      // Top
+      ctx.fillStyle = "white";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
       ctx.fill();
-
-      // Nickname tam oyuncunun altına
-      ctx.fillStyle = 'white';
-      ctx.fillText(p.nickname || '', p.x, p.y + p.radius + 15);
     }
 
-    requestAnimationFrame(draw);
-  }
-
-  // ESC menü için
-  function toggleEscMenu() {
-    const menu = document.getElementById('escMenu');
-    if (menu.style.display === 'block') {
-      menu.style.display = 'none';
-    } else {
-      menu.style.display = 'block';
-      document.getElementById('menuRoomId').innerText = roomId;
-      renderPlayersList();
-    }
-  }
-
-  function closeEscMenu() {
-    document.getElementById('escMenu').style.display = 'none';
-  }
-
-  function renderPlayersList() {
-    const listDiv = document.getElementById('playersList');
-    listDiv.innerHTML = '';
-
-    for (const id in players) {
-      const p = players[id];
-      const div = document.createElement('div');
-      div.className = 'playerItem';
-
-      const teamText = p.team === 1 ? 'Kırmızı' : 'Mavi';
-      div.innerHTML = `<span>${p.nickname} (${teamText})</span>`;
-
-      if (isHost && p.id !== playerId) {
-        // Takım değiştirme butonu
-        const teamBtn = document.createElement('button');
-        teamBtn.innerText = 'Takım Değiştir';
-        teamBtn.onclick = () => {
-          ws.send(JSON.stringify({ type: 'changeTeam', target: p.id }));
-        };
-        div.appendChild(teamBtn);
-
-        // Oyuncuyu at butonu
-        const kickBtn = document.createElement('button');
-        kickBtn.innerText = 'At';
-        kickBtn.onclick = () => {
-          ws.send(JSON.stringify({ type: 'kickPlayer', target: p.id }));
-        };
-        div.appen
+    gameLoop();
+  </script>
+</body>
+</html>
