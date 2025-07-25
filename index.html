@@ -13,8 +13,7 @@
   #adminMenu {
     display:none; position:fixed; top:10%; left:50%; transform:translateX(-50%);
     background:#333; padding:20px; border:2px solid lime; border-radius:10px; z-index:100;
-    max-width:300px;
-    color: white;
+    max-width:300px; color:white;
   }
   #adminMenu button { margin-left: 10px; }
 </style>
@@ -39,9 +38,9 @@
 
 <div id="adminMenu">
   <h3>🎛 Yönetici Paneli (Host)</h3>
-  <p>ID: <span id="adminRoomId"></span></p>
+  <p>Parti ID: <span id="adminRoomId"></span></p>
   <div id="playersAdmin"></div>
-  <button onclick="closeAdmin()">Kapat</button>
+  <button id="closeAdminBtn">Kapat</button>
 </div>
 
 <script>
@@ -113,13 +112,22 @@ function connect() {
     if (e.code === 'Space') ws.send(JSON.stringify({ type: 'kick' }));
     if (e.key === 'Escape' && isHost) {
       const menu = document.getElementById('adminMenu');
-      menu.style.display = (menu.style.display === 'none' || menu.style.display === '') ? 'block' : 'none';
+      if (menu.style.display === 'none' || menu.style.display === '') {
+        menu.style.display = 'block';
+        updateAdmin();
+      } else {
+        menu.style.display = 'none';
+      }
     }
   });
   window.addEventListener('keyup', e => {
     keys[e.key.toLowerCase()] = false;
     sendMovement();
   });
+
+  document.getElementById('closeAdminBtn').onclick = () => {
+    document.getElementById('adminMenu').style.display = 'none';
+  };
 
   requestAnimationFrame(draw);
 }
@@ -153,23 +161,29 @@ function updateAdmin() {
     const el = document.createElement('div');
     el.innerHTML = `
       ${p.nickname} (Takım ${p.team})
-      <button onclick="changeTeam('${p.id}')">Takım Değiştir</button>
-      <button onclick="kickPlayer('${p.id}')">At</button>
+      <button class="changeTeamBtn" data-id="${p.id}">Takım Değiştir</button>
+      <button class="kickPlayerBtn" data-id="${p.id}">At</button>
     `;
     div.appendChild(el);
   });
-}
 
-function changeTeam(id) {
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'changeTeam', target: id }));
-}
+  document.querySelectorAll('.changeTeamBtn').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.getAttribute('data-id');
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'changeTeam', target: id }));
+      }
+    };
+  });
 
-function kickPlayer(id) {
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'kickPlayer', target: id }));
-}
-
-function closeAdmin() {
-  document.getElementById('adminMenu').style.display = 'none';
+  document.querySelectorAll('.kickPlayerBtn').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.getAttribute('data-id');
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'kickPlayer', target: id }));
+      }
+    };
+  });
 }
 
 function draw() {
