@@ -1,155 +1,156 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>HackBall</title>
   <style>
-    canvas {
-      border: 2px solid black;
-      background: #0b3d91;
-      display: block;
-      margin: 0 auto;
-    }
-    #menu {
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body, html { width: 100%; height: 100%; font-family: sans-serif; background: #0f0; overflow: hidden; }
+
+    canvas { display: block; margin: auto; background: #222; }
+
+    #gui {
       position: absolute;
-      top: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      border: 1px solid #333;
-      display: none;
-      z-index: 10;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff; padding: 20px;
+      border-radius: 10px; box-shadow: 0 0 20px #000;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 10px; z-index: 2;
     }
-    #menu button {
-      display: block;
-      margin: 5px 0;
+
+    #escMenu {
+      position: absolute; top: 10%; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.9); color: #fff;
+      padding: 20px; border-radius: 10px;
+      display: none; z-index: 3;
+      width: 400px;
     }
+
+    .playerRow {
+      display: flex; justify-content: space-between;
+      margin-bottom: 5px;
+    }
+
+    .btn { padding: 5px 10px; border: none; border-radius: 5px; cursor: pointer; }
+    .btn-red { background: red; color: white; }
+    .btn-blue { background: blue; color: white; }
+    .btn-kick { background: gray; color: white; }
+    .btn-transfer { background: orange; color: white; }
   </style>
 </head>
 <body>
-  <canvas id="game" width="800" height="600"></canvas>
-  <div id="menu">
-    <div><strong>Parti ID:</strong> <span id="partyIdText"></span></div>
-    <button onclick="changeTeam()">Takımı Değiştir</button>
-    <button onclick="kickPlayer()">Oyuncuyu At</button>
-    <button onclick="closeMenu()">Menüyü Kapat</button>
+  <div id="gui">
+    <h2>HackBall</h2>
+    <input type="text" id="nickname" placeholder="Nickiniz" />
+    <input type="text" id="partyId" placeholder="Parti ID (varsa)" />
+    <button onclick="createParty()">Parti Oluştur</button>
+    <button onclick="joinParty()">Partiye Katıl</button>
   </div>
 
+  <div id="escMenu"></div>
+
+  <canvas id="gameCanvas" width="960" height="540"></canvas>
+
   <script>
-    const canvas = document.getElementById('game');
+    const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const menu = document.getElementById('menu');
-    const partyIdText = document.getElementById('partyIdText');
-
-    let ws;
-    let players = {};
-    let myId = null;
-    let myRoomId = null;
-    let ball = { x: 400, y: 300, radius: 10, vx: 0, vy: 0 };
+    const socket = new WebSocket('ws://' + location.hostname + ':3000');
+    let playerId = null, players = {}, ball = { x: 480, y: 270, vx: 0, vy: 0 };
     let keys = {};
+    let isLeader = false;
+    let partyId = "";
 
-    const nickname = prompt("Takma ad:") || "Oyuncu";
-    let roomId = prompt("Parti ID (boşsa yeni oluşturulur):");
-    if (!roomId) roomId = Math.random().toString(36).substring(2, 8);
-
-    ws = new WebSocket("wss://hackball-server.onrender.com");
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "join", roomId, nickname }));
-    };
-
-    ws.onmessage = (msg) => {
-      const data = JSON.parse(msg.data);
-      if (data.type === "init") {
-        myId = data.id;
-        myRoomId = roomId;
-        partyIdText.textContent = myRoomId;
-      }
-      if (data.type === "gameState") {
-        players = data.players;
-        ball = data.ball;
-      }
-    };
-
-    function sendMove(dx, dy) {
-      ws.send(JSON.stringify({ type: "move", dx, dy }));
-    }
-
-    function sendKick() {
-      ws.send(JSON.stringify({ type: "kick" }));
-    }
-
-    function changeTeam() {
-      ws.send(JSON.stringify({ type: "changeTeam" }));
-    }
-
-    function kickPlayer() {
-      const id = prompt("Oyuncu ID'si:");
-      if (id) ws.send(JSON.stringify({ type: "kickPlayer", id }));
-    }
-
-    function closeMenu() {
-      menu.style.display = "none";
-    }
-
-    window.addEventListener("keydown", (e) => {
-      keys[e.key] = true;
-      if (e.key === "Escape" && players[myId]?.host) {
-        menu.style.display = menu.style.display === "none" ? "block" : "none";
-      }
-      if (e.code === "Space") sendKick();
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') toggleEscMenu();
+      keys[e.key.toLowerCase()] = true;
     });
+    document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-    window.addEventListener("keyup", (e) => {
-      keys[e.key] = false;
-    });
+    function toggleEscMenu() {
+      const menu = document.getElementById('escMenu');
+      if (!isLeader) return;
+      menu.innerHTML = "<h3>Oyuncular</h3>";
+      Object.entries(players).forEach(([id, p]) => {
+        const row = document.createElement('div');
+        row.className = 'playerRow';
+        row.innerHTML = `
+          <span style="color:${p.team === 'red' ? 'red' : 'blue'}">${p.nick}</span>
+          <button class="btn btn-red" onclick="changeTeam('${id}','red')">Kırmızı</button>
+          <button class="btn btn-blue" onclick="changeTeam('${id}','blue')">Mavi</button>
+          <button class="btn btn-kick" onclick="kickPlayer('${id}')">✖</button>
+          ${playerId !== id ? `<button class="btn btn-transfer" onclick="transferLeader('${id}')">Lider Yap</button>` : ''}
+        `;
+        menu.appendChild(row);
+      });
+      const info = document.createElement('div');
+      info.innerHTML = `<p>Parti ID: <b>${partyId}</b></p>`;
+      menu.appendChild(info);
+      menu.style.display = (menu.style.display === 'none') ? 'block' : 'none';
+    }
+
+    function createParty() {
+      const nick = document.getElementById('nickname').value;
+      socket.send(JSON.stringify({ type: 'createParty', nick }));
+    }
+
+    function joinParty() {
+      const nick = document.getElementById('nickname').value;
+      const pid = document.getElementById('partyId').value;
+      socket.send(JSON.stringify({ type: 'joinParty', nick, partyId: pid }));
+    }
+
+    function changeTeam(id, team) {
+      socket.send(JSON.stringify({ type: 'changeTeam', id, team }));
+    }
+
+    function kickPlayer(id) {
+      socket.send(JSON.stringify({ type: 'kickPlayer', id }));
+    }
+
+    function transferLeader(id) {
+      socket.send(JSON.stringify({ type: 'transferLeader', id }));
+    }
+
+    socket.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'init') {
+        playerId = msg.id;
+        isLeader = msg.leader;
+        partyId = msg.partyId;
+        document.getElementById('gui').style.display = 'none';
+      } else if (msg.type === 'state') {
+        players = msg.players;
+        ball = msg.ball;
+      }
+    };
 
     function gameLoop() {
-      // Hareket gönderme
-      let dx = 0, dy = 0;
-      if (keys["w"]) dy -= 1;
-      if (keys["s"]) dy += 1;
-      if (keys["a"]) dx -= 1;
-      if (keys["d"]) dx += 1;
-      if (dx !== 0 || dy !== 0) {
-        const len = Math.sqrt(dx * dx + dy * dy);
-        dx /= len; dy /= len;
-        sendMove(dx, dy);
-      }
-
-      draw();
-      requestAnimationFrame(gameLoop);
-    }
-
-    function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Saha çiz
-      ctx.fillStyle = "#0b3d91";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Oyuncular
-      ctx.font = "14px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
+      // Draw Ball
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 15, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      // Draw Players
       for (let id in players) {
         const p = players[id];
-        ctx.fillStyle = p.team === 1 ? "red" : "blue";
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+        ctx.fillStyle = p.team === 'red' ? 'red' : 'blue';
         ctx.fill();
-        ctx.fillStyle = "white";
-        ctx.fillText(p.nickname || "", p.x, p.y + 18);
+        ctx.fillStyle = 'white';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(p.nick, p.x - 20, p.y + 35);
       }
-
-      // Top
-      ctx.fillStyle = "white";
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-      ctx.fill();
+      requestAnimationFrame(gameLoop);
     }
-
     gameLoop();
+
+    setInterval(() => {
+      socket.send(JSON.stringify({ type: 'input', keys }));
+    }, 1000 / 50);
   </script>
 </body>
 </html>
