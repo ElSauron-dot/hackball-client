@@ -1,153 +1,185 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HackBall</title>
   <style>
-    html, body { margin: 0; padding: 0; overflow: hidden; background: #121212; color: white; font-family: sans-serif; }
-    canvas { background: green; display: block; margin: 0 auto; }
-    #gui {
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px;
-      display: flex; flex-direction: column; gap: 10px; width: 300px; text-align: center;
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #222;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
     }
+
+    #loginMenu {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 300px;
+    }
+
+    #loginMenu input {
+      padding: 8px;
+      font-size: 14px;
+    }
+
+    #loginMenu button {
+      padding: 10px;
+      font-size: 14px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: green;
+    }
+
     #escMenu {
-      position: absolute; top: 10%; left: 50%; transform: translateX(-50%);
-      background: rgba(0,0,0,0.95); padding: 20px; border-radius: 10px; display: none;
-      min-width: 300px;
+      display: none;
+      position: absolute;
+      top: 60px;
+      right: 20px;
+      width: 300px;
+      background: #fff;
+      border: 2px solid #000;
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 999;
     }
-    .playerRow { display: flex; justify-content: space-between; align-items: center; margin: 5px 0; }
-    button { padding: 6px 10px; border: none; border-radius: 5px; cursor: pointer; }
-    .teamRed { background: crimson; }
-    .teamBlue { background: dodgerblue; }
+
+    #escMenu h3 {
+      margin: 0 0 10px 0;
+    }
+
+    .playerRow {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .playerRow button {
+      margin-left: 4px;
+    }
+
+    #timer {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
+    }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="960" height="540"></canvas>
-
-  <div id="gui">
-    <input id="nick" placeholder="Nickiniz" />
-    <input id="partyId" placeholder="Parti ID (varsa)" />
-    <button id="createParty">Parti Oluştur</button>
-    <button id="joinParty">Partiye Katıl</button>
+  <div id="loginMenu">
+    <input type="text" id="nickInput" placeholder="Nickiniz" />
+    <input type="text" id="partyIdInput" placeholder="Parti ID (isteğe bağlı)" />
+    <button onclick="createParty()">Parti Oluştur</button>
+    <button onclick="joinParty()">Partiye Katıl</button>
   </div>
+
+  <canvas id="gameCanvas" width="900" height="500"></canvas>
+  <div id="timer">06:00</div>
 
   <div id="escMenu">
-    <h3>Parti Kontrol Paneli</h3>
+    <h3>Parti Yönetimi</h3>
     <div id="playerList"></div>
-    <p>Parti ID: <span id="partyDisplay"></span></p>
-    <button onclick="closeMenu()">Kapat</button>
+    <p><b>Parti ID:</b> <span id="partyIdText"></span></p>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
-    const socket = io();
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    let players = {}, ball = null, myId = null, leader = false;
-    let keys = {};
+    const socket = io("https://hackball-server.onrender.com"); // SUNUCU ADRESİN BURADA
+    let isLeader = false;
+    let gameStarted = false;
+    let nick = "";
+    let partyId = "";
 
-    // Giriş GUI
-    document.getElementById('createParty').onclick = () => {
-      const nick = document.getElementById('nick').value.trim();
-      if (!nick) return;
-      socket.emit('create', nick);
-      document.getElementById('gui').style.display = 'none';
-    };
-    document.getElementById('joinParty').onclick = () => {
-      const nick = document.getElementById('nick').value.trim();
-      const id = document.getElementById('partyId').value.trim();
-      if (!nick || !id) return;
-      socket.emit('join', { nick, id });
-      document.getElementById('gui').style.display = 'none';
-    };
-
-    document.addEventListener('keydown', e => {
-      keys[e.code] = true;
-      if (e.code === 'Escape') toggleMenu();
-    });
-    document.addEventListener('keyup', e => {
-      keys[e.code] = false;
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && isLeader && gameStarted) {
+        const escMenu = document.getElementById("escMenu");
+        escMenu.style.display = escMenu.style.display === "none" ? "block" : "none";
+      }
     });
 
-    function toggleMenu() {
-      if (!leader) return;
-      const menu = document.getElementById('escMenu');
-      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    function createParty() {
+      nick = document.getElementById("nickInput").value;
+      socket.emit("createParty", { nick });
     }
 
-    function closeMenu() {
-      document.getElementById('escMenu').style.display = 'none';
+    function joinParty() {
+      nick = document.getElementById("nickInput").value;
+      partyId = document.getElementById("partyIdInput").value;
+      socket.emit("joinParty", { nick, partyId });
     }
 
-    socket.on('init', ({ id, teamLeader }) => {
-      myId = id;
-      leader = teamLeader;
+    socket.on("partyCreated", (id) => {
+      partyId = id;
+      isLeader = true;
+      startGame();
     });
 
-    socket.on('state', data => {
-      players = data.players;
-      ball = data.ball;
-      draw();
-      updateMenu();
+    socket.on("joinedParty", (data) => {
+      partyId = data.partyId;
+      isLeader = false;
+      startGame();
     });
 
-    function updateMenu() {
-      const list = document.getElementById('playerList');
-      list.innerHTML = '';
-      for (let id in players) {
-        const p = players[id];
-        const row = document.createElement('div');
-        row.className = 'playerRow';
+    function startGame() {
+      document.getElementById("loginMenu").style.display = "none";
+      document.getElementById("partyIdText").innerText = partyId;
+      gameStarted = true;
+      // Futbol mekaniği ve oyun başlatma kodu burada olacak
+    }
+
+    socket.on("updatePlayerList", (players) => {
+      const list = document.getElementById("playerList");
+      list.innerHTML = "";
+      players.forEach(p => {
+        const row = document.createElement("div");
+        row.className = "playerRow";
         row.innerHTML = `
-          <span style="color:${p.color}">${p.name}${p.leader ? ' 👑' : ''}</span>
-          <div>
-            <button class="teamRed" onclick="changeTeam('${id}','red')">K</button>
-            <button class="teamBlue" onclick="changeTeam('${id}','blue')">M</button>
-            <button onclick="kick('${id}')">❌</button>
-          </div>`;
+          <span style="color: ${p.color};">${p.nick}</span>
+          ${isLeader ? `
+            <div>
+              <button onclick="changeTeam('${p.id}')">Takım</button>
+              <button onclick="kickPlayer('${p.id}')">❌</button>
+              <button onclick="makeLeader('${p.id}')">⭐</button>
+            </div>
+          ` : ""}
+        `;
         list.appendChild(row);
-      }
-      document.getElementById('partyDisplay').innerText = location.hash.slice(1);
+      });
+    });
+
+    function changeTeam(id) {
+      socket.emit("changeTeam", { id, partyId });
     }
 
-    function changeTeam(id, team) {
-      socket.emit('changeTeam', { id, team });
+    function kickPlayer(id) {
+      socket.emit("kickPlayer", { id, partyId });
     }
 
-    function kick(id) {
-      socket.emit('kick', id);
+    function makeLeader(id) {
+      socket.emit("makeLeader", { id, partyId });
     }
-
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!ball) return;
-
-      // Saha
-      ctx.fillStyle = 'green';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Top
-      ctx.fillStyle = 'white';
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Oyuncular
-      for (let id in players) {
-        const p = players[id];
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'white';
-        ctx.fillText(p.name, p.x - 15, p.y - 20);
-      }
-    }
-
-    setInterval(() => {
-      socket.emit('input', keys);
-    }, 1000 / 50);
   </script>
 </body>
 </html>
