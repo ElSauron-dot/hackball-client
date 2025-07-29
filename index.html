@@ -9,205 +9,190 @@
     html, body {
       margin: 0;
       overflow: hidden;
-      background: #111;
-      font-family: sans-serif;
-    }
-
-    #start-menu {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.5);
-      text-align: center;
-      z-index: 10;
-    }
-
-    #esc-menu {
-      display: none;
-      position: absolute;
-      top: 10%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #222;
-      color: white;
-      padding: 20px;
-      border-radius: 10px;
-      z-index: 9;
-      min-width: 200px;
+      background-color: #1b5e20; /* Çim rengi */
     }
 
     canvas {
       display: block;
     }
 
-    #player-list {
-      list-style: none;
-      padding: 0;
-      margin: 10px 0 0;
+    #start-menu {
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      border: 3px solid #000;
+      border-radius: 10px;
+      padding: 20px;
+      z-index: 999;
     }
 
-    #player-list li {
-      margin: 4px 0;
+    #esc-menu {
+      display: none;
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255,255,255,0.95);
+      padding: 20px;
+      border: 2px solid black;
+      border-radius: 12px;
+      z-index: 999;
+    }
+
+    .button {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: #0d47a1;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .scoreboard {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 20px;
+      border-radius: 10px;
+      z-index: 999;
     }
   </style>
 </head>
 <body>
   <div id="start-menu">
     <h2>HackBall</h2>
-    <input id="nickname" placeholder="Nick" /><br /><br />
-    <input id="partyID" placeholder="Parti ID" /><br /><br />
-    <button id="createParty">Parti Oluştur</button>
-    <button id="joinParty">Partiye Katıl</button>
+    <input type="text" id="name" placeholder="Nickiniz"><br><br>
+    <input type="text" id="party-id" placeholder="Parti ID"><br><br>
+    <button id="create-party" class="button">Parti Oluştur</button>
+    <button id="join-party" class="button">Partiye Katıl</button>
   </div>
 
   <div id="esc-menu">
-    <p>Parti ID: <span id="menu-party-id"></span></p>
-    <ul id="player-list"></ul>
+    <h3>Parti Menüsü</h3>
+    <p><strong>Parti ID:</strong> <span id="party-id-display"></span></p>
+    <div id="player-list"></div>
   </div>
 
-  <canvas id="gameCanvas"></canvas>
+  <div class="scoreboard">
+    <span id="red-score">0</span> - <span id="blue-score">0</span>
+  </div>
 
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
+  <script src="/socket.io/socket.io.js"></script>
   <script>
+    const socket = io();
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
 
-    let socket = io("https://hackball-server.onrender.com");
     let playerId = null;
     let players = {};
-    let ball = { x: 500, y: 300, vx: 0, vy: 0 };
-    let isLeader = false;
+    let ball = null;
     let partyID = "";
 
-    const FIELD_WIDTH = 1000;
-    const FIELD_HEIGHT = 600;
+    document.getElementById("create-party").onclick = () => {
+      const name = document.getElementById("name").value;
+      socket.emit("createParty", name);
+    };
 
-    function drawField(camX, camY) {
-      ctx.fillStyle = "#0a0";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    document.getElementById("join-party").onclick = () => {
+      const name = document.getElementById("name").value;
+      const id = document.getElementById("party-id").value;
+      socket.emit("joinParty", { name, id });
+    };
 
-      ctx.save();
-      ctx.translate(-camX + canvas.width / 2, -camY + canvas.height / 2);
+    socket.on("partyCreated", ({ id }) => {
+      partyID = id;
+      document.getElementById("party-id-display").innerText = id;
+      document.getElementById("start-menu").style.display = "none";
+    });
 
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 4;
-      ctx.strokeRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
-      ctx.beginPath();
-      ctx.arc(FIELD_WIDTH / 2, FIELD_HEIGHT / 2, 100, 0, 2 * Math.PI);
-      ctx.stroke();
-      ctx.restore();
-    }
+    socket.on("partyJoined", ({ id }) => {
+      partyID = id;
+      document.getElementById("party-id-display").innerText = id;
+      document.getElementById("start-menu").style.display = "none";
+    });
 
-    function drawBall(camX, camY) {
-      ctx.save();
-      ctx.translate(-camX + canvas.width / 2, -camY + canvas.height / 2);
-      ctx.beginPath();
-      ctx.fillStyle = "#fff";
-      ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
+    socket.on("joinError", (msg) => {
+      alert(msg);
+      document.getElementById("start-menu").style.display = "block";
+    });
 
-    function drawPlayers(camX, camY) {
-      ctx.save();
-      ctx.translate(-camX + canvas.width / 2, -camY + canvas.height / 2);
-      for (let id in players) {
-        const p = players[id];
-        ctx.beginPath();
-        ctx.fillStyle = p.team === "red" ? "red" : "blue";
-        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.font = "14px Arial";
-        ctx.fillText(p.name, p.x - 20, p.y - 20);
-      }
-      ctx.restore();
-    }
+    socket.on("init", ({ id }) => {
+      playerId = id;
+    });
 
-    function render() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!playerId || !players[playerId]) return requestAnimationFrame(render);
+    socket.on("state", (state) => {
+      players = state.players;
+      ball = state.ball;
 
-      const me = players[playerId];
-      drawField(me.x, me.y);
-      drawBall(me.x, me.y);
-      drawPlayers(me.x, me.y);
-      requestAnimationFrame(render);
-    }
+      document.getElementById("red-score").innerText = state.score.red;
+      document.getElementById("blue-score").innerText = state.score.blue;
+    });
 
-    render();
-
-    let keys = {};
-    window.addEventListener("keydown", e => keys[e.key] = true);
-    window.addEventListener("keyup", e => keys[e.key] = false);
-
-    setInterval(() => {
-      if (!playerId) return;
-      const input = {
-        up: keys["w"] || keys["ArrowUp"],
-        down: keys["s"] || keys["ArrowDown"],
-        left: keys["a"] || keys["ArrowLeft"],
-        right: keys["d"] || keys["ArrowRight"],
-        kick: keys[" "] || keys["0"]
-      };
-      socket.emit("input", input);
-    }, 1000 / 60);
-
-    // ESC MENU
-    window.addEventListener("keydown", e => {
-      if (e.key === "Escape" && isLeader) {
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
         const menu = document.getElementById("esc-menu");
-        const list = document.getElementById("player-list");
-        list.innerHTML = "";
-        for (let id in players) {
-          const p = players[id];
-          const li = document.createElement("li");
-          li.textContent = `${p.name} (${p.team})`;
-          list.appendChild(li);
-        }
         menu.style.display = menu.style.display === "none" ? "block" : "none";
       }
+      socket.emit("keyPress", { key: e.key, pressed: true });
     });
 
-    document.getElementById("createParty").onclick = () => {
-      const name = document.getElementById("nickname").value.trim();
-      if (!name) return alert("Nick girin");
-      socket.emit("createParty", name);
-      document.getElementById("start-menu").style.display = "none";
-    };
-
-    document.getElementById("joinParty").onclick = () => {
-      const name = document.getElementById("nickname").value.trim();
-      const id = document.getElementById("partyID").value.trim();
-      if (!name || !id) return alert("Eksik alan");
-      socket.emit("joinParty", { name, id });
-      document.getElementById("start-menu").style.display = "none";
-    };
-
-    socket.on("init", ({ id, allPlayers, ballState, leader, pid }) => {
-      playerId = id;
-      players = allPlayers;
-      ball = ballState;
-      isLeader = leader === id;
-      partyID = pid;
-      document.getElementById("menu-party-id").textContent = pid;
+    document.addEventListener("keyup", (e) => {
+      socket.emit("keyPress", { key: e.key, pressed: false });
     });
 
-    socket.on("state", ({ allPlayers, ballState }) => {
-      players = allPlayers;
-      ball = ballState;
-    });
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    window.addEventListener("resize", () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    });
+      // Saha çizgileri
+      ctx.fillStyle = "#1b5e20";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+      // Orta çizgi
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2, 0);
+      ctx.lineTo(canvas.width / 2, canvas.height);
+      ctx.stroke();
+
+      // Kaleler
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, canvas.height / 2 - 50, 10, 100);
+      ctx.fillRect(canvas.width - 10, canvas.height / 2 - 50, 10, 100);
+
+      // Oyuncular
+      for (const id in players) {
+        const p = players[id];
+        ctx.fillStyle = p.team === "red" ? "red" : "blue";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Top
+      if (ball) {
+        ctx.fillStyle = "white";
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
   </script>
 </body>
 </html>
