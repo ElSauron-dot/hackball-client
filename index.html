@@ -2,6 +2,8 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google-site-verification" content="5erUS4gnK8jPbyyalGJYX_MhW_-3CRyS343ygihqevc" />
   <title>HackBall</title>
   <style>
     html, body {
@@ -10,6 +12,7 @@
       background: #111;
       font-family: sans-serif;
     }
+
     #start-menu {
       position: absolute;
       top: 50%;
@@ -22,6 +25,7 @@
       text-align: center;
       z-index: 10;
     }
+
     #esc-menu {
       display: none;
       position: absolute;
@@ -33,9 +37,21 @@
       padding: 20px;
       border-radius: 10px;
       z-index: 9;
+      min-width: 200px;
     }
+
     canvas {
       display: block;
+    }
+
+    #player-list {
+      list-style: none;
+      padding: 0;
+      margin: 10px 0 0;
+    }
+
+    #player-list li {
+      margin: 4px 0;
     }
   </style>
 </head>
@@ -59,8 +75,8 @@
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
-    canvas.width = 1000;
-    canvas.height = 600;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
     let socket = io("https://hackball-server.onrender.com");
     let playerId = null;
@@ -69,25 +85,38 @@
     let isLeader = false;
     let partyID = "";
 
-    function drawField() {
+    const FIELD_WIDTH = 1000;
+    const FIELD_HEIGHT = 600;
+
+    function drawField(camX, camY) {
       ctx.fillStyle = "#0a0";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.translate(-camX + canvas.width / 2, -camY + canvas.height / 2);
+
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 4;
-      ctx.strokeRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeRect(0, 0, FIELD_WIDTH, FIELD_HEIGHT);
       ctx.beginPath();
-      ctx.arc(canvas.width/2, canvas.height/2, 100, 0, 2 * Math.PI);
+      ctx.arc(FIELD_WIDTH / 2, FIELD_HEIGHT / 2, 100, 0, 2 * Math.PI);
       ctx.stroke();
+      ctx.restore();
     }
 
-    function drawBall() {
+    function drawBall(camX, camY) {
+      ctx.save();
+      ctx.translate(-camX + canvas.width / 2, -camY + canvas.height / 2);
       ctx.beginPath();
       ctx.fillStyle = "#fff";
       ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     }
 
-    function drawPlayers() {
+    function drawPlayers(camX, camY) {
+      ctx.save();
+      ctx.translate(-camX + canvas.width / 2, -camY + canvas.height / 2);
       for (let id in players) {
         const p = players[id];
         ctx.beginPath();
@@ -98,26 +127,25 @@
         ctx.font = "14px Arial";
         ctx.fillText(p.name, p.x - 20, p.y - 20);
       }
+      ctx.restore();
     }
 
     function render() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawField();
-      drawBall();
-      drawPlayers();
+      if (!playerId || !players[playerId]) return requestAnimationFrame(render);
+
+      const me = players[playerId];
+      drawField(me.x, me.y);
+      drawBall(me.x, me.y);
+      drawPlayers(me.x, me.y);
       requestAnimationFrame(render);
     }
 
     render();
 
-    // Movement
     let keys = {};
-    window.addEventListener("keydown", e => {
-      keys[e.key] = true;
-    });
-    window.addEventListener("keyup", e => {
-      keys[e.key] = false;
-    });
+    window.addEventListener("keydown", e => keys[e.key] = true);
+    window.addEventListener("keyup", e => keys[e.key] = false);
 
     setInterval(() => {
       if (!playerId) return;
@@ -129,17 +157,24 @@
         kick: keys[" "] || keys["0"]
       };
       socket.emit("input", input);
-    }, 1000 / 50);
+    }, 1000 / 60);
 
     // ESC MENU
     window.addEventListener("keydown", e => {
       if (e.key === "Escape" && isLeader) {
         const menu = document.getElementById("esc-menu");
+        const list = document.getElementById("player-list");
+        list.innerHTML = "";
+        for (let id in players) {
+          const p = players[id];
+          const li = document.createElement("li");
+          li.textContent = `${p.name} (${p.team})`;
+          list.appendChild(li);
+        }
         menu.style.display = menu.style.display === "none" ? "block" : "none";
       }
     });
 
-    // GUI
     document.getElementById("createParty").onclick = () => {
       const name = document.getElementById("nickname").value.trim();
       if (!name) return alert("Nick girin");
@@ -155,7 +190,6 @@
       document.getElementById("start-menu").style.display = "none";
     };
 
-    // Socket events
     socket.on("init", ({ id, allPlayers, ballState, leader, pid }) => {
       playerId = id;
       players = allPlayers;
@@ -170,6 +204,10 @@
       ball = ballState;
     });
 
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
   </script>
 </body>
 </html>
