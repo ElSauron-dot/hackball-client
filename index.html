@@ -2,197 +2,124 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="google-site-verification" content="5erUS4gnK8jPbyyalGJYX_MhW_-3CRyS343ygihqevc" />
   <title>HackBall</title>
   <style>
-    html, body {
+    body {
       margin: 0;
-      overflow: hidden;
-      background-color: #1b5e20; /* Çim rengi */
+      background: #111;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
     }
-
-    canvas {
-      display: block;
-    }
-
     #start-menu {
       position: absolute;
-      top: 30%;
+      top: 50%;
       left: 50%;
-      transform: translateX(-50%);
-      background: #fff;
-      border: 3px solid #000;
-      border-radius: 10px;
+      transform: translate(-50%, -50%);
+      background: #222;
       padding: 20px;
-      z-index: 999;
+      border-radius: 12px;
+      z-index: 10;
     }
-
-    #esc-menu {
+    #gameCanvas {
       display: none;
+      background: green;
+      margin: 50px auto 0 auto;
+      display: block;
+      border: 3px solid white;
+    }
+    #esc-menu {
       position: absolute;
       top: 20px;
-      right: 20px;
-      background: rgba(255,255,255,0.95);
-      padding: 20px;
-      border: 2px solid black;
-      border-radius: 12px;
-      z-index: 999;
-    }
-
-    .button {
-      display: inline-block;
-      margin-top: 10px;
-      padding: 8px 16px;
-      background: #0d47a1;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-
-    .scoreboard {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 24px;
-      font-weight: bold;
-      color: white;
-      background: rgba(0,0,0,0.6);
-      padding: 8px 20px;
-      border-radius: 10px;
-      z-index: 999;
+      left: 20px;
+      background: #000c;
+      padding: 10px;
+      border: 2px solid #fff3;
+      display: none;
     }
   </style>
 </head>
 <body>
   <div id="start-menu">
     <h2>HackBall</h2>
-    <input type="text" id="name" placeholder="Nickiniz"><br><br>
-    <input type="text" id="party-id" placeholder="Parti ID"><br><br>
-    <button id="create-party" class="button">Parti Oluştur</button>
-    <button id="join-party" class="button">Partiye Katıl</button>
+    <input id="nick" placeholder="Nick" /><br/><br/>
+    <input id="party-id" placeholder="Parti ID" /><br/><br/>
+    <button onclick="createParty()">Parti Oluştur</button>
+    <button onclick="joinParty()">Partiye Katıl</button>
+    <p id="error" style="color:red"></p>
   </div>
-
-  <div id="esc-menu">
-    <h3>Parti Menüsü</h3>
-    <p><strong>Parti ID:</strong> <span id="party-id-display"></span></p>
-    <div id="player-list"></div>
-  </div>
-
-  <div class="scoreboard">
-    <span id="red-score">0</span> - <span id="blue-score">0</span>
-  </div>
-
-  <canvas id="gameCanvas" width="1280" height="720"></canvas>
-
-  <script src="/socket.io/socket.io.js"></script>
+  <canvas id="gameCanvas" width="900" height="520"></canvas>
+  <div id="esc-menu"></div>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
-    const socket = io();
+    const socket = io("https://hackball-server.onrender.com");
+    const startMenu = document.getElementById("start-menu");
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
+    const escMenu = document.getElementById("esc-menu");
 
-    let playerId = null;
-    let players = {};
-    let ball = null;
-    let partyID = "";
+    let player = {};
+    let players = [];
+    let ball = { x: 450, y: 260, vx: 0, vy: 0 };
 
-    document.getElementById("create-party").onclick = () => {
-      const name = document.getElementById("name").value;
-      socket.emit("createParty", name);
-    };
+    function createParty() {
+      const nick = document.getElementById("nick").value;
+      socket.emit("createParty", { nick });
+    }
 
-    document.getElementById("join-party").onclick = () => {
-      const name = document.getElementById("name").value;
-      const id = document.getElementById("party-id").value;
-      socket.emit("joinParty", { name, id });
-    };
+    function joinParty() {
+      const nick = document.getElementById("nick").value;
+      const partyId = document.getElementById("party-id").value;
+      socket.emit("joinParty", { nick, partyId });
+    }
 
-    socket.on("partyCreated", ({ id }) => {
-      partyID = id;
-      document.getElementById("party-id-display").innerText = id;
-      document.getElementById("start-menu").style.display = "none";
+    socket.on("start", () => {
+      startMenu.style.display = "none";
+      canvas.style.display = "block";
     });
 
-    socket.on("partyJoined", ({ id }) => {
-      partyID = id;
-      document.getElementById("party-id-display").innerText = id;
-      document.getElementById("start-menu").style.display = "none";
+    socket.on("state", (game) => {
+      players = game.players;
+      ball = game.ball;
+      render();
     });
 
-    socket.on("joinError", (msg) => {
-      alert(msg);
-      document.getElementById("start-menu").style.display = "block";
-    });
-
-    socket.on("init", ({ id }) => {
-      playerId = id;
-    });
-
-    socket.on("state", (state) => {
-      players = state.players;
-      ball = state.ball;
-
-      document.getElementById("red-score").innerText = state.score.red;
-      document.getElementById("blue-score").innerText = state.score.blue;
-    });
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Saha çizgileri
+      ctx.fillStyle = "white";
+      ctx.fillRect(450 - 2, 0, 4, 520); // orta çizgi
+      ctx.beginPath();
+      ctx.arc(450, 260, 60, 0, Math.PI * 2);
+      ctx.stroke();
+      // Kaleler
+      ctx.fillStyle = "red";
+      ctx.fillRect(0, 190, 10, 140);
+      ctx.fillStyle = "blue";
+      ctx.fillRect(890, 190, 10, 140);
+      // Top
+      ctx.fillStyle = "white";
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      // Oyuncular
+      players.forEach(p => {
+        ctx.fillStyle = p.team === "red" ? "red" : "blue";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "white";
+        ctx.fillText(p.nick, p.x - 10, p.y - 16);
+      });
+    }
 
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        const menu = document.getElementById("esc-menu");
-        menu.style.display = menu.style.display === "none" ? "block" : "none";
+        escMenu.style.display = escMenu.style.display === "none" ? "block" : "none";
       }
-      socket.emit("keyPress", { key: e.key, pressed: true });
     });
-
-    document.addEventListener("keyup", (e) => {
-      socket.emit("keyPress", { key: e.key, pressed: false });
-    });
-
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Saha çizgileri
-      ctx.fillStyle = "#1b5e20";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 4;
-      ctx.strokeRect(0, 0, canvas.width, canvas.height);
-
-      // Orta çizgi
-      ctx.beginPath();
-      ctx.moveTo(canvas.width / 2, 0);
-      ctx.lineTo(canvas.width / 2, canvas.height);
-      ctx.stroke();
-
-      // Kaleler
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, canvas.height / 2 - 50, 10, 100);
-      ctx.fillRect(canvas.width - 10, canvas.height / 2 - 50, 10, 100);
-
-      // Oyuncular
-      for (const id in players) {
-        const p = players[id];
-        ctx.fillStyle = p.team === "red" ? "red" : "blue";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Top
-      if (ball) {
-        ctx.fillStyle = "white";
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y, 12, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      requestAnimationFrame(draw);
-    }
-
-    draw();
   </script>
 </body>
 </html>
