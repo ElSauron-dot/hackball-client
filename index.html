@@ -11,9 +11,9 @@
       background: #111;
       color: white;
       font-family: sans-serif;
-      text-align: center;
+      overflow: hidden;
     }
-    #start-menu {
+    #gui {
       position: absolute;
       top: 50%;
       left: 50%;
@@ -23,102 +23,68 @@
       border-radius: 12px;
       z-index: 10;
     }
-    #gameCanvas {
+    #gui input {
+      display: block;
+      margin: 10px auto;
+      padding: 10px;
+      font-size: 16px;
+      width: 200px;
+    }
+    #gui button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #game {
       display: none;
       background: green;
-      margin: 50px auto 0 auto;
-      display: block;
-      border: 3px solid white;
-    }
-    #esc-menu {
+      border: 4px solid white;
+      margin: auto;
       position: absolute;
-      top: 20px;
-      left: 20px;
-      background: #000c;
-      padding: 10px;
-      border: 2px solid #fff3;
-      display: none;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
     }
   </style>
 </head>
 <body>
-  <div id="start-menu">
-    <h2>HackBall</h2>
-    <input id="nick" placeholder="Nick" /><br/><br/>
-    <input id="party-id" placeholder="Parti ID" /><br/><br/>
-    <button onclick="createParty()">Parti Oluştur</button>
-    <button onclick="joinParty()">Partiye Katıl</button>
-    <p id="error" style="color:red"></p>
+  <div id="gui">
+    <input type="text" id="nick" placeholder="Nick gir" />
+    <input type="text" id="partyId" placeholder="Parti ID" />
+    <button id="createBtn">Parti Oluştur</button>
+    <button id="joinBtn">Partiye Katıl</button>
   </div>
-  <canvas id="gameCanvas" width="900" height="520"></canvas>
-  <div id="esc-menu"></div>
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <canvas id="game" width="900" height="520"></canvas>
+
+  <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io("https://hackball-server.onrender.com");
-    const startMenu = document.getElementById("start-menu");
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    const escMenu = document.getElementById("esc-menu");
+    const socket = io();
+    const gui = document.getElementById("gui");
+    const canvas = document.getElementById("game");
 
-    let player = {};
-    let players = [];
-    let ball = { x: 450, y: 260, vx: 0, vy: 0 };
+    document.getElementById("createBtn").onclick = () => {
+      const nick = document.getElementById("nick").value.trim();
+      if (!nick) return alert(\"Nick girmen gerekiyor.\");
+      socket.emit(\"createParty\", { nick });
+    };
 
-    function createParty() {
-      const nick = document.getElementById("nick").value;
-      socket.emit("createParty", { nick });
-    }
+    document.getElementById("joinBtn").onclick = () => {
+      const nick = document.getElementById("nick").value.trim();
+      const partyID = document.getElementById("partyId").value.trim();
+      if (!nick || !partyID) return alert(\"Nick ve Parti ID gerekli.\");
+      socket.emit(\"joinParty\", { nick, partyID });
+    };
 
-    function joinParty() {
-      const nick = document.getElementById("nick").value;
-      const partyId = document.getElementById("party-id").value;
-      socket.emit("joinParty", { nick, partyId });
-    }
-
-    socket.on("start", () => {
-      startMenu.style.display = "none";
-      canvas.style.display = "block";
+    socket.on(\"start\", (data) => {
+      console.log(\"Partiye girildi:\", data);
+      gui.style.display = \"none\";
+      canvas.style.display = \"block\";
     });
 
-    socket.on("state", (game) => {
-      players = game.players;
-      ball = game.ball;
-      render();
-    });
-
-    function render() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // Saha çizgileri
-      ctx.fillStyle = "white";
-      ctx.fillRect(450 - 2, 0, 4, 520); // orta çizgi
-      ctx.beginPath();
-      ctx.arc(450, 260, 60, 0, Math.PI * 2);
-      ctx.stroke();
-      // Kaleler
-      ctx.fillStyle = "red";
-      ctx.fillRect(0, 190, 10, 140);
-      ctx.fillStyle = "blue";
-      ctx.fillRect(890, 190, 10, 140);
-      // Top
-      ctx.fillStyle = "white";
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      // Oyuncular
-      players.forEach(p => {
-        ctx.fillStyle = p.team === "red" ? "red" : "blue";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "white";
-        ctx.fillText(p.nick, p.x - 10, p.y - 16);
-      });
-    }
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        escMenu.style.display = escMenu.style.display === "none" ? "block" : "none";
-      }
+    socket.on(\"joinError\", (msg) => {
+      alert(msg);
     });
   </script>
 </body>
