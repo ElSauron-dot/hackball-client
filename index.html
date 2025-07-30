@@ -12,10 +12,13 @@
     #gui input { display:block; margin:10px auto; padding:8px; font-size:16px; }
     #gui button { padding:10px 20px; margin:5px; font-size:16px; cursor:pointer; }
     #game { display:none; }
-    .scoreboard {
-      position:absolute; top:10px; left:50%; transform:translateX(-50%);
-      background:#000a; padding:5px 15px; border-radius:8px; font-size:20px; color:#fff;
-    }
+    .scoreboard { position:absolute; top:10px; left:50%; transform:translateX(-50%);
+      background:#000a; padding:5px 15px; border-radius:8px; font-size:20px; color:#fff; }
+    #escMenu { display:none; position:absolute; top:20%; left:50%; transform:translateX(-50%);
+      background:#222; padding:20px; border-radius:10px; color:#fff; min-width:300px; }
+    #escMenu ul { list-style:none; padding:0; }
+    #escMenu li { margin:5px 0; }
+    #escMenu button { margin-left:10px; }
   </style>
 </head>
 <body>
@@ -29,6 +32,10 @@
   <div id="game">
     <div class="scoreboard"><span id="redScore">0</span> - <span id="blueScore">0</span></div>
     <canvas id="canvas" width="900" height="520"></canvas>
+    <div id="escMenu">
+      <h3>Parti ID: <span id="partyIDtxt"></span></h3>
+      <ul id="playerList"></ul>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -36,29 +43,36 @@
     const socket = io();
     const gui = document.getElementById("gui");
     const gameDiv = document.getElementById("game");
+    const escMenu = document.getElementById("escMenu");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
+    const playerList = document.getElementById("playerList");
 
     let players = {};
     let ball = {x:450,y:260};
     let score = { red:0, blue:0 };
+    let leader = false;
+    let partyID = "";
 
     document.getElementById("create").onclick = () => {
       const nick = document.getElementById("nick").value.trim();
       if(!nick) return alert("Nick gir!");
       socket.emit("createParty", { nick });
     };
-
     document.getElementById("join").onclick = () => {
       const nick = document.getElementById("nick").value.trim();
-      const partyId = document.getElementById("partyId").value.trim();
-      if(!nick || !partyId) return alert("Nick ve parti ID gir!");
-      socket.emit("joinParty", { nick, partyID:partyId });
+      const pid = document.getElementById("partyId").value.trim();
+      if(!nick || !pid) return alert("Nick ve parti ID gir!");
+      socket.emit("joinParty", { nick, partyID:pid });
     };
 
-    socket.on("start", () => {
+    socket.on("start", (data) => {
       gui.style.display = "none";
       gameDiv.style.display = "block";
+      leader = data.leader;
+      players = data.players;
+      partyID = data.partyID;
+      document.getElementById("partyIDtxt").innerText = partyID;
     });
 
     socket.on("joinError", msg => alert(msg));
@@ -67,12 +81,35 @@
       players = s.players;
       ball = s.ball;
       score = s.score;
+      leader = s.leader === socket.id;
+      partyID = s.partyID;
       document.getElementById("redScore").innerText = score.red;
       document.getElementById("blueScore").innerText = score.blue;
     });
 
-    window.addEventListener("keydown", e => sendInput(e.key, true));
-    window.addEventListener("keyup", e => sendInput(e.key, false));
+    window.addEventListener("keydown", e => {
+      if(e.key === "Escape" && leader){
+        escMenu.style.display = escMenu.style.display==="none"?"block":"none";
+        renderPlayerList();
+      }
+      sendInput(e.key,true);
+    });
+    window.addEventListener("keyup", e => sendInput(e.key,false));
+
+    function renderPlayerList(){
+      playerList.innerHTML="";
+      for(const id in players){
+        const li=document.createElement("li");
+        li.textContent=players[id].nick+" ("+players[id].team+")";
+        if(leader && id!==socket.id){
+          const btn=document.createElement("button");
+          btn.textContent="At";
+          btn.onclick=()=>socket.emit("kickPlayer",{targetId:id});
+          li.appendChild(btn);
+        }
+        playerList.appendChild(li);
+      }
+    }
 
     function sendInput(key, down) {
       const input = {};
@@ -86,42 +123,24 @@
 
     function render() {
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      // Saha
-      ctx.fillStyle = "#1b5e20";
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 4;
+      ctx.fillStyle="#1b5e20"; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle="white"; ctx.lineWidth=4;
       ctx.strokeRect(0,0,canvas.width,canvas.height);
-      ctx.beginPath();
-      ctx.moveTo(canvas.width/2,0);
-      ctx.lineTo(canvas.width/2,canvas.height);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(canvas.width/2,canvas.height/2,60,0,2*Math.PI);
-      ctx.stroke();
-      // Kaleler
-      const goalTop = (canvas.height - 140) / 2;
+      ctx.beginPath(); ctx.moveTo(canvas.width/2,0); ctx.lineTo(canvas.width/2,canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.arc(canvas.width/2,canvas.height/2,60,0,2*Math.PI); ctx.stroke();
+      const goalTop=(canvas.height-140)/2;
       ctx.fillStyle="white";
-      ctx.fillRect(0,goalTop,8,140);
-      ctx.fillRect(canvas.width-8,goalTop,8,140);
+      ctx.fillRect(0,goalTop,8,140); ctx.fillRect(canvas.width-8,goalTop,8,140);
 
-      // Oyuncular
       for(const id in players){
-        const p = players[id];
-        ctx.fillStyle = p.team==="red" ? "red" : "blue";
-        ctx.beginPath();
-        ctx.arc(p.x,p.y,15,0,2*Math.PI);
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.font="14px Arial";
-        ctx.fillText(p.nick,p.x-15,p.y-20);
+        const p=players[id];
+        ctx.fillStyle=p.team==="red"?"red":"blue";
+        ctx.beginPath(); ctx.arc(p.x,p.y,15,0,2*Math.PI); ctx.fill();
+        ctx.fillStyle="#fff"; ctx.font="14px Arial"; ctx.fillText(p.nick,p.x-15,p.y-20);
       }
 
-      // Top
       ctx.fillStyle="white";
-      ctx.beginPath();
-      ctx.arc(ball.x,ball.y,10,0,2*Math.PI);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(ball.x,ball.y,10,0,2*Math.PI); ctx.fill();
 
       requestAnimationFrame(render);
     }
