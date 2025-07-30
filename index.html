@@ -2,28 +2,35 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="google-site-verification" content="5erUS4gnK8jPbyyalGJYX_MhW_-3CRyS343ygihqevc" />
   <title>HackBall</title>
   <style>
-    body { margin:0; background:#111; overflow:hidden; color:#fff; font-family:sans-serif; }
-    #gui { position:absolute; top:50%; left:50%; transform:translate(-50,-50); background:#222; padding:20px; border-radius:10px; z-index:10; }
-    #gui input, #gui button { display:block; margin:10px auto; padding:10px; font-size:16px; }
-    #game { display:none; background:#1b5e20; border:4px solid white; width:900px; height:520px; margin:50px auto; position:relative;}
-    .scoreboard { position:absolute; top:10px; left:50%; transform:translateX(-50%); font-size:24px; font-weight:bold; }
+    body { margin:0; background:#111; overflow:hidden; font-family:sans-serif; }
+    #gui {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      background:#222; padding:20px; border-radius:10px; text-align:center;
+    }
+    #gui input { display:block; margin:10px auto; padding:8px; font-size:16px; }
+    #gui button { padding:10px 20px; margin:5px; font-size:16px; cursor:pointer; }
+    #game { display:none; }
+    .scoreboard {
+      position:absolute; top:10px; left:50%; transform:translateX(-50%);
+      background:#000a; padding:5px 15px; border-radius:8px; font-size:20px; color:#fff;
+    }
   </style>
 </head>
 <body>
   <div id="gui">
-    <input id="nick" placeholder="Nick gir" />
-    <input id="partyId" placeholder="Parti ID" />
-    <button id="createBtn">Parti Oluştur</button>
-    <button id="joinBtn">Partiye Katıl</button>
+    <input id="nick" placeholder="Nick" />
+    <input id="partyId" placeholder="Parti ID (katılmak için)" />
+    <button id="create">Parti Oluştur</button>
+    <button id="join">Partiye Katıl</button>
   </div>
+
   <div id="game">
-    <div class="scoreboard"><span id="scoreRed">0</span> - <span id="scoreBlue">0</span></div>
+    <div class="scoreboard"><span id="redScore">0</span> - <span id="blueScore">0</span></div>
     <canvas id="canvas" width="900" height="520"></canvas>
   </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
@@ -31,53 +38,59 @@
     const gameDiv = document.getElementById("game");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
-    let players={}, ball={x:450,y:260}, score={red:0,blue:0};
 
-    document.getElementById("createBtn").onclick = () => {
+    let players = {};
+    let ball = {x:450,y:260};
+    let score = { red:0, blue:0 };
+
+    document.getElementById("create").onclick = () => {
       const nick = document.getElementById("nick").value.trim();
-      if(!nick) return alert("Nick gir");
+      if(!nick) return alert("Nick gir!");
       socket.emit("createParty", { nick });
     };
-    document.getElementById("joinBtn").onclick = () => {
+
+    document.getElementById("join").onclick = () => {
       const nick = document.getElementById("nick").value.trim();
-      const id = document.getElementById("partyId").value.trim();
-      if(!nick||!id) return alert("Nick ve ID gerekli");
-      socket.emit("joinParty", { nick, partyID: id });
+      const partyId = document.getElementById("partyId").value.trim();
+      if(!nick || !partyId) return alert("Nick ve parti ID gir!");
+      socket.emit("joinParty", { nick, partyID:partyId });
     };
 
     socket.on("start", () => {
-      gui.style.display="none";
-      gameDiv.style.display="block";
+      gui.style.display = "none";
+      gameDiv.style.display = "block";
     });
+
     socket.on("joinError", msg => alert(msg));
+
     socket.on("state", (s) => {
       players = s.players;
       ball = s.ball;
       score = s.score;
-      document.getElementById("scoreRed").innerText = score.red;
-      document.getElementById("scoreBlue").innerText = score.blue;
+      document.getElementById("redScore").innerText = score.red;
+      document.getElementById("blueScore").innerText = score.blue;
     });
 
-    window.addEventListener("keydown", e => emitInput(e.key, true));
-    window.addEventListener("keyup", e => emitInput(e.key, false));
+    window.addEventListener("keydown", e => sendInput(e.key, true));
+    window.addEventListener("keyup", e => sendInput(e.key, false));
 
-    function emitInput(key, down) {
+    function sendInput(key, down) {
       const input = {};
-      if("ArrowUp w".includes(key)) input.up = down;
-      if("ArrowDown s".includes(key)) input.down = down;
-      if("ArrowLeft a".includes(key)) input.left = down;
-      if("ArrowRight d".includes(key)) input.right = down;
-      if(key===" ") input.kick = down;
+      if(key==="ArrowUp"||key==="w") input.up=down;
+      if(key==="ArrowDown"||key==="s") input.down=down;
+      if(key==="ArrowLeft"||key==="a") input.left=down;
+      if(key==="ArrowRight"||key==="d") input.right=down;
+      if(key===" ") input.kick=down;
       socket.emit("input", input);
     }
 
     function render() {
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle="#1b5e20";
+      // Saha
+      ctx.fillStyle = "#1b5e20";
       ctx.fillRect(0,0,canvas.width,canvas.height);
-
-      ctx.strokeStyle="white";
-      ctx.lineWidth=4;
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 4;
       ctx.strokeRect(0,0,canvas.width,canvas.height);
       ctx.beginPath();
       ctx.moveTo(canvas.width/2,0);
@@ -86,24 +99,28 @@
       ctx.beginPath();
       ctx.arc(canvas.width/2,canvas.height/2,60,0,2*Math.PI);
       ctx.stroke();
-
-      const goalTop=(canvas.height-GOAL_HEIGHT)/2;
+      // Kaleler
+      const goalTop = (canvas.height - 140) / 2;
       ctx.fillStyle="white";
-      ctx.fillRect(0, goalTop, 10, GOAL_HEIGHT);
-      ctx.fillRect(canvas.width-10, goalTop,10,GOAL_HEIGHT);
+      ctx.fillRect(0,goalTop,8,140);
+      ctx.fillRect(canvas.width-8,goalTop,8,140);
 
+      // Oyuncular
       for(const id in players){
-        const p=players[id];
-        ctx.fillStyle=p.team==="red"?"red":"blue";
+        const p = players[id];
+        ctx.fillStyle = p.team==="red" ? "red" : "blue";
         ctx.beginPath();
-        ctx.arc(p.x,p.y,PLAYER_RADIUS,0,2*Math.PI);
+        ctx.arc(p.x,p.y,15,0,2*Math.PI);
         ctx.fill();
-        ctx.fillStyle="white";
-        ctx.fillText(p.nick,p.x-10,p.y-16);
+        ctx.fillStyle = "#fff";
+        ctx.font="14px Arial";
+        ctx.fillText(p.nick,p.x-15,p.y-20);
       }
+
+      // Top
       ctx.fillStyle="white";
       ctx.beginPath();
-      ctx.arc(ball.x, ball.y, BALL_RADIUS,0,2*Math.PI);
+      ctx.arc(ball.x,ball.y,10,0,2*Math.PI);
       ctx.fill();
 
       requestAnimationFrame(render);
