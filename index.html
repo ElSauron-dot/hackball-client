@@ -2,149 +2,143 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <title>HackBall</title>
+  <title>HackBall Multiplayer</title>
   <style>
-    body { margin:0; background:#111; overflow:hidden; font-family:sans-serif; }
-    #gui {
-      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-      background:#222; padding:20px; border-radius:10px; text-align:center;
-    }
-    #gui input { display:block; margin:10px auto; padding:8px; font-size:16px; }
-    #gui button { padding:10px 20px; margin:5px; font-size:16px; cursor:pointer; }
-    #game { display:none; }
-    .scoreboard { position:absolute; top:10px; left:50%; transform:translateX(-50%);
-      background:#000a; padding:5px 15px; border-radius:8px; font-size:20px; color:#fff; }
-    #escMenu { display:none; position:absolute; top:20%; left:50%; transform:translateX(-50%);
-      background:#222; padding:20px; border-radius:10px; color:#fff; min-width:300px; }
-    #escMenu ul { list-style:none; padding:0; }
-    #escMenu li { margin:5px 0; }
-    #escMenu button { margin-left:10px; }
+    body { margin: 0; background: #111; color: white; font-family: sans-serif; text-align: center; }
+    #lobby, #roomDisplay { padding-top: 50px; }
+    #game { display: none; margin: 20px auto; background: #222; border: 2px solid #fff; position: relative; }
+    input, select, button { padding: 10px; margin: 10px; font-size: 16px; border-radius: 8px; border: none; }
+    button { cursor: pointer; }
   </style>
 </head>
 <body>
-  <div id="gui">
-    <input id="nick" placeholder="Nick" />
-    <input id="partyId" placeholder="Parti ID (katılmak için)" />
-    <button id="create">Parti Oluştur</button>
-    <button id="join">Partiye Katıl</button>
-  </div>
 
-  <div id="game">
-    <div class="scoreboard"><span id="redScore">0</span> - <span id="blueScore">0</span></div>
-    <canvas id="canvas" width="900" height="520"></canvas>
-    <div id="escMenu">
-      <h3>Parti ID: <span id="partyIDtxt"></span></h3>
-      <ul id="playerList"></ul>
-    </div>
-  </div>
+<div id="lobby">
+  <h1>⚽ HackBall'a Hoş Geldin</h1>
+  <input type="text" id="nickname" placeholder="Takma adını yaz"><br />
+  <select id="teamSelect">
+    <option value="">Takımını seç</option>
+    <option value="red">Kırmızı (solda)</option>
+    <option value="blue">Mavi (sağda)</option>
+  </select><br />
+  <input type="text" id="roomId" placeholder="Parti ID gir (örnek: abc123)"><br />
+  <button onclick="joinGame()">Katıl</button>
+  <button onclick="createRoom()">Yeni Parti Oluştur</button>
+</div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const gui = document.getElementById("gui");
-    const gameDiv = document.getElementById("game");
-    const escMenu = document.getElementById("escMenu");
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
-    const playerList = document.getElementById("playerList");
+<div id="roomDisplay" style="display:none;">
+  <h2>✅ Parti oluşturuldu!</h2>
+  <p>Bu parti ID'sini arkadaşlarınla paylaş:</p>
+  <h1 id="roomCodeDisplay" style="font-size: 36px; color: lime;"></h1>
+  <button onclick="startHostGame()">Oyunu Başlat</button>
+</div>
 
-    let players = {};
-    let ball = {x:450,y:260};
-    let score = { red:0, blue:0 };
-    let leader = false;
-    let partyID = "";
+<canvas id="game" width="600" height="400"></canvas>
+<p id="timer" style="color:white; font-size:18px;"></p>
 
-    document.getElementById("create").onclick = () => {
-      const nick = document.getElementById("nick").value.trim();
-      if(!nick) return alert("Nick gir!");
-      socket.emit("createParty", { nick });
+<script>
+  let nickname = '', roomId = '', team = '';
+  let ws, players = {}, ball = { x: 300, y: 200 };
+  let gameStartTime = null;
+
+  function createRoom() {
+    nickname = document.getElementById('nickname').value.trim();
+    team = document.getElementById('teamSelect').value;
+    if (!nickname || !team) return alert("Takma ad ve takım seçin");
+
+    roomId = Math.random().toString(36).substring(2, 8);
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('roomDisplay').style.display = 'block';
+    document.getElementById('roomCodeDisplay').innerText = roomId;
+  }
+
+  function startHostGame() {
+    connectWebSocket();
+    document.getElementById('roomDisplay').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    gameStartTime = Date.now();
+  }
+
+  function joinGame() {
+    nickname = document.getElementById('nickname').value.trim();
+    team = document.getElementById('teamSelect').value;
+    roomId = document.getElementById('roomId').value.trim();
+    if (!nickname || !team || !roomId) return alert("Takma ad, takım ve parti ID gir");
+
+    connectWebSocket();
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+  }
+
+  function connectWebSocket() {
+    ws = new WebSocket('wss://hackball-server.onrender.com');
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'join', nickname, roomId, team }));
     };
-    document.getElementById("join").onclick = () => {
-      const nick = document.getElementById("nick").value.trim();
-      const pid = document.getElementById("partyId").value.trim();
-      if(!nick || !pid) return alert("Nick ve parti ID gir!");
-      socket.emit("joinParty", { nick, partyID:pid });
+
+    ws.onmessage = event => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'error') {
+        alert(data.message);
+        location.reload();
+        return;
+      }
+      if (data.type === 'gameState') {
+        players = {};
+        data.players.forEach(p => { players[p.playerId] = p; });
+        ball = data.ball;
+      }
     };
 
-    socket.on("start", (data) => {
-      gui.style.display = "none";
-      gameDiv.style.display = "block";
-      leader = data.leader;
-      players = data.players;
-      partyID = data.partyID;
-      document.getElementById("partyIDtxt").innerText = partyID;
+    ws.onclose = () => {
+      alert('Sunucu bağlantısı kesildi!');
+      location.reload();
+    };
+
+    window.addEventListener('keydown', e => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      let dir = null;
+      if (e.key === 'ArrowLeft') dir = 'left';
+      else if (e.key === 'ArrowRight') dir = 'right';
+      else if (e.key === 'ArrowUp') dir = 'up';
+      else if (e.key === 'ArrowDown') dir = 'down';
+      if (dir) ws.send(JSON.stringify({ type: 'move', dir }));
     });
 
-    socket.on("joinError", msg => alert(msg));
+    draw();
+  }
 
-    socket.on("state", (s) => {
-      players = s.players;
-      ball = s.ball;
-      score = s.score;
-      leader = s.leader === socket.id;
-      partyID = s.partyID;
-      document.getElementById("redScore").innerText = score.red;
-      document.getElementById("blueScore").innerText = score.blue;
-    });
+  function draw() {
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    window.addEventListener("keydown", e => {
-      if(e.key === "Escape" && leader){
-        escMenu.style.display = escMenu.style.display==="none"?"block":"none";
-        renderPlayerList();
-      }
-      sendInput(e.key,true);
-    });
-    window.addEventListener("keyup", e => sendInput(e.key,false));
+    ctx.fillStyle = 'white';
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2); ctx.fill();
 
-    function renderPlayerList(){
-      playerList.innerHTML="";
-      for(const id in players){
-        const li=document.createElement("li");
-        li.textContent=players[id].nick+" ("+players[id].team+")";
-        if(leader && id!==socket.id){
-          const btn=document.createElement("button");
-          btn.textContent="At";
-          btn.onclick=()=>socket.emit("kickPlayer",{targetId:id});
-          li.appendChild(btn);
-        }
-        playerList.appendChild(li);
+    ctx.font = '14px Arial'; ctx.textAlign = 'center';
+    for (let id in players) {
+      let p = players[id];
+      ctx.fillStyle = p.team === 'red' ? 'red' : 'blue';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'white'; ctx.fillText(p.nickname, p.x, p.y + 30);
+    }
+
+    if (gameStartTime) {
+      const elapsed = Math.floor((Date.now() - gameStartTime) / 1000);
+      const remaining = Math.max(0, 360 - elapsed);
+      document.getElementById('timer').innerText = `Kalan süre: ${remaining}s`;
+      if (remaining <= 0) {
+        alert("Maç sona erdi!");
+        location.reload();
+        return;
       }
     }
 
-    function sendInput(key, down) {
-      const input = {};
-      if(key==="ArrowUp"||key==="w") input.up=down;
-      if(key==="ArrowDown"||key==="s") input.down=down;
-      if(key==="ArrowLeft"||key==="a") input.left=down;
-      if(key==="ArrowRight"||key==="d") input.right=down;
-      if(key===" ") input.kick=down;
-      socket.emit("input", input);
-    }
+    requestAnimationFrame(draw);
+  }
+</script>
 
-    function render() {
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle="#1b5e20"; ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.strokeStyle="white"; ctx.lineWidth=4;
-      ctx.strokeRect(0,0,canvas.width,canvas.height);
-      ctx.beginPath(); ctx.moveTo(canvas.width/2,0); ctx.lineTo(canvas.width/2,canvas.height); ctx.stroke();
-      ctx.beginPath(); ctx.arc(canvas.width/2,canvas.height/2,60,0,2*Math.PI); ctx.stroke();
-      const goalTop=(canvas.height-140)/2;
-      ctx.fillStyle="white";
-      ctx.fillRect(0,goalTop,8,140); ctx.fillRect(canvas.width-8,goalTop,8,140);
-
-      for(const id in players){
-        const p=players[id];
-        ctx.fillStyle=p.team==="red"?"red":"blue";
-        ctx.beginPath(); ctx.arc(p.x,p.y,15,0,2*Math.PI); ctx.fill();
-        ctx.fillStyle="#fff"; ctx.font="14px Arial"; ctx.fillText(p.nick,p.x-15,p.y-20);
-      }
-
-      ctx.fillStyle="white";
-      ctx.beginPath(); ctx.arc(ball.x,ball.y,10,0,2*Math.PI); ctx.fill();
-
-      requestAnimationFrame(render);
-    }
-    render();
-  </script>
 </body>
 </html>
