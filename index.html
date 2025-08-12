@@ -1,217 +1,405 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <title>HackBall</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      background-color: #0c0;
-      font-family: sans-serif;
-    }
-
-    #gui {
-      position: absolute;
-      top: 20%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: white;
-      padding: 20px;
-      border-radius: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      align-items: center;
-    }
-
-    canvas {
-      display: block;
-      margin: auto;
-      background: repeating-linear-gradient(
-        90deg,
-        #0a0 0px,
-        #0a0 40px,
-        #0c0 40px,
-        #0c0 80px
-      );
-    }
-
-    #chatBox {
-      position: absolute;
-      bottom: 0;
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      background: rgba(0, 0, 0, 0.6);
-    }
-
-    #messages {
-      max-height: 100px;
-      overflow-y: auto;
-      color: white;
-      font-size: 14px;
-      width: 90%;
-    }
-
-    #chatInput {
-      width: 90%;
-      margin: 5px 0;
-    }
-
-    #scoreBoard {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: white;
-      font-size: 24px;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ElSauron Chat (Mesaj + Arama)</title>
+<style>
+  :root{
+    --bg:#121212; --panel:#1f1f1f; --muted:#9aa0a6; --accent:#4a90e2;
+    --msg-bg:#2a2a2a; --mine-bg:#264e26;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;font-family:Inter,Arial;background:var(--bg);color:#e6e6e6}
+  #wrap{display:flex;height:100%}
+  /* left */
+  #left{width:240px;background:var(--panel);border-right:1px solid #222;padding:12px;display:flex;flex-direction:column}
+  #left h3{margin:0 0 10px 0;font-size:14px;color:var(--muted)}
+  .channel{padding:8px;border-radius:6px;margin-bottom:6px;background:#282828;cursor:pointer}
+  .channel:hover{background:#333}
+  #addVoice{margin-top:auto;padding:8px;border-radius:6px;background:#333;border:none;color:#fff;cursor:pointer}
+  /* main */
+  #main{flex:1;display:flex;flex-direction:column}
+  #header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#171717;border-bottom:1px solid #222}
+  #header .title{font-weight:700}
+  #header .controls{display:flex;gap:8px;align-items:center}
+  #clearBtn{background:#3b3b3b;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer}
+  #connectRow{padding:10px;background:#151515;border-bottom:1px solid #222;display:flex;gap:8px;align-items:center}
+  #connectRow input{padding:8px;border-radius:6px;border:1px solid #333;background:#0f0f0f;color:#eee}
+  #tabs{display:flex;gap:8px;padding:10px;background:#141414;border-bottom:1px solid #222}
+  .tab{padding:8px 12px;border-radius:6px;background:#1b1b1b;cursor:pointer}
+  .tab.active{background:var(--accent)}
+  .content{flex:1;display:flex;overflow:hidden}
+  /* messages */
+  #messagesPanel{flex:1;display:flex;flex-direction:column}
+  #messages{flex:1;overflow:auto;padding:12px;background:linear-gradient(180deg,#0b0b0b, #0f0f0f)}
+  .message{display:flex;gap:10px;margin-bottom:12px;align-items:flex-start}
+  .avatar{width:40px;height:40px;border-radius:50%;background:#666;flex-shrink:0}
+  .bubble{background:var(--msg-bg);padding:8px 12px;border-radius:8px;max-width:70%}
+  .meta{font-size:12px;color:var(--muted);display:flex;gap:8px;align-items:center;margin-bottom:6px}
+  .mine .bubble{background:var(--mine-bg);color:#fff}
+  #inputRow{display:flex;padding:12px;border-top:1px solid #222;background:#0f0f0f;gap:8px}
+  #textIn{flex:1;padding:10px;border-radius:20px;border:1px solid #333;background:#101010;color:#fff}
+  #sendBtn{padding:10px 14px;border-radius:20px;border:none;background:var(--accent);color:#fff;cursor:pointer}
+  /* calls */
+  #callsPanel{flex:1;padding:12px;display:flex;flex-direction:column;gap:8px;background:#0b0b0b}
+  #members{display:flex;flex-direction:column;gap:8px}
+  .member{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:#171717}
+  .member .status{width:10px;height:10px;border-radius:50%}
+  .status.online{background:#4caf50}
+  .member button{margin-left:auto;padding:6px 8px;border-radius:6px;border:none;background:#2e8b57;color:#fff;cursor:pointer}
+  /* right */
+  #right{width:220px;background:var(--panel);border-left:1px solid #222;display:flex;flex-direction:column}
+  #membersHeader{padding:10px;border-bottom:1px solid #222;color:var(--muted)}
+  #memberList{padding:10px;overflow:auto;flex:1}
+  /* small */
+  .sys{font-style:italic;color:var(--muted);margin-bottom:8px}
+</style>
 </head>
 <body>
-  <div id="gui">
-    <input id="nickname" placeholder="Nick">
-    <input id="roomId" placeholder="Parti ID">
-    <select id="team">
-      <option value="red">Kırmızı</option>
-      <option value="blue">Mavi</option>
-    </select>
-    <button id="createBtn">Parti Oluştur</button>
-    <button id="joinBtn">Partiye Katıl</button>
-    <p id="errorMsg" style="color:red;"></p>
+<div id="wrap">
+  <div id="left">
+    <h3>Kanallar</h3>
+    <div class="channel"># genel</div>
+    <div class="channel"># oyun</div>
+    <div class="channel"># destek</div>
+    <button id="addVoice">Sesli Sohbet Kanalı Ekle</button>
   </div>
 
-  <canvas id="gameCanvas" width="800" height="600"></canvas>
-  <div id="scoreBoard">0 - 0</div>
+  <div id="main">
+    <div id="header">
+      <div class="title">ElSauron Chat</div>
+      <div class="controls">
+        <button id="clearBtn">Tüm Mesajları Temizle</button>
+      </div>
+    </div>
 
-  <div id="chatBox">
-    <div id="messages"></div>
-    <input id="chatInput" placeholder="Mesaj yaz..." />
+    <div id="connectRow">
+      <input id="nameInput" placeholder="Kullanıcı adınız (örn: ElSauron)" />
+      <button id="connectBtn">Bağlan</button>
+      <div id="status" style="margin-left:8px;color:var(--muted)"></div>
+    </div>
+
+    <div id="tabs">
+      <div id="tabMsg" class="tab active">Mesajlar</div>
+      <div id="tabCall" class="tab">Aramalar</div>
+    </div>
+
+    <div class="content">
+      <!-- Mesajlar -->
+      <div id="messagesPanel" style="flex:1;display:flex;flex-direction:column">
+        <div id="messages" aria-live="polite"></div>
+        <div id="inputRow">
+          <input id="textIn" placeholder="Mesaj yaz..." />
+          <button id="sendBtn">Gönder</button>
+        </div>
+      </div>
+
+      <!-- Aramalar -->
+      <div id="callsPanel" style="display:none">
+        <div class="sys">Arama başlatmak için sağdaki kullanıcı listesinde aradığınızın yanında Ara butonuna basın.</div>
+        <div id="members" ></div>
+        <div style="margin-top:auto;color:var(--muted);font-size:13px">Not: İlk bağlantıda mikrofon izni istenir.</div>
+        <audio id="remoteAudio" autoplay></audio>
+      </div>
+    </div>
   </div>
 
-  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
-  <script>
-    const socket = io("https://hackball-server.onrender.com");
+  <div id="right">
+    <div id="membersHeader">Grup Üyeleri</div>
+    <div id="memberList"></div>
+  </div>
+</div>
 
-    const gui = document.getElementById("gui");
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+<script>
+/* ---------- AYARLAR ---------- */
+const WS_URL = "wss://mesaj-server.onrender.com"; // Render sunucusu
+const STUN_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
-    const createBtn = document.getElementById("createBtn");
-    const joinBtn = document.getElementById("joinBtn");
-    const nicknameInput = document.getElementById("nickname");
-    const roomIdInput = document.getElementById("roomId");
-    const teamSelect = document.getElementById("team");
-    const errorMsg = document.getElementById("errorMsg");
+/* ---------- DURUMLAR ---------- */
+let ws = null;
+let myName = "";
+let localStream = null;
+let pcs = {}; // aktif peerconnection'lar keyed by remote name
 
-    const chatInput = document.getElementById("chatInput");
-    const messages = document.getElementById("messages");
-    const scoreBoard = document.getElementById("scoreBoard");
+/* ---------- DOM ---------- */
+const statusEl = document.getElementById("status");
+const nameInput = document.getElementById("nameInput");
+const connectBtn = document.getElementById("connectBtn");
+const clearBtn = document.getElementById("clearBtn");
+const messagesEl = document.getElementById("messages");
+const sendBtn = document.getElementById("sendBtn");
+const textIn = document.getElementById("textIn");
+const memberListEl = document.getElementById("memberList");
+const membersCallsEl = document.getElementById("members");
+const tabMsg = document.getElementById("tabMsg");
+const tabCall = document.getElementById("tabCall");
+const messagesPanel = document.getElementById("messagesPanel");
+const callsPanel = document.getElementById("callsPanel");
+const remoteAudio = document.getElementById("remoteAudio");
 
-    let player = null;
-    let players = {};
-    let ball = { x: 400, y: 300 };
-    let score = { red: 0, blue: 0 };
-    let roomId = null;
+/* ---------- UI TAB İŞLEMLERİ ---------- */
+tabMsg.onclick = () => { tabMsg.classList.add("active"); tabCall.classList.remove("active"); messagesPanel.style.display="flex"; callsPanel.style.display="none"; }
+tabCall.onclick = () => { tabCall.classList.add("active"); tabMsg.classList.remove("active"); messagesPanel.style.display="none"; callsPanel.style.display="flex"; }
 
-    createBtn.onclick = () => {
-      socket.emit("createRoom", {
-        nickname: nicknameInput.value,
-        team: teamSelect.value
-      });
-    };
+/* ---------- Bağlan / Kayıt ---------- */
+connectBtn.onclick = async () => {
+  myName = nameInput.value.trim();
+  if (!myName) return alert("Lütfen kullanıcı adı girin.");
+  connectBtn.disabled = true;
+  statusEl.textContent = "Bağlanıyor...";
+  ws = new WebSocket(WS_URL);
 
-    joinBtn.onclick = () => {
-      socket.emit("joinRoom", {
-        roomId: roomIdInput.value,
-        nickname: nicknameInput.value,
-        team: teamSelect.value
-      });
-    };
+  ws.onopen = async () => {
+    // register
+    ws.send(JSON.stringify({ type: "register", name: myName }));
+    statusEl.textContent = "Kayıt gönderildi.";
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      console.warn("Mikrofon izni verilmedi veya hata:", e);
+    }
+  };
 
-    socket.on("roomCreated", (id) => {
-      roomId = id;
-      gui.style.display = "none";
-    });
+  ws.onmessage = async (evt) => {
+    let data;
+    try { data = JSON.parse(evt.data); } catch(e) { console.error("Parse hata", e); return; }
 
-    socket.on("roomJoined", (id) => {
-      roomId = id;
-      gui.style.display = "none";
-    });
-
-    socket.on("errorMsg", (msg) => {
-      errorMsg.textContent = msg;
-    });
-
-    socket.on("state", (gameState) => {
-      players = gameState.players;
-      ball = gameState.ball;
-      score = gameState.score;
-      scoreBoard.textContent = `${score.red} - ${score.blue}`;
-    });
-
-    let keys = {};
-
-    document.addEventListener("keydown", (e) => {
-      keys[e.key.toLowerCase()] = true;
-    });
-
-    document.addEventListener("keyup", (e) => {
-      keys[e.key.toLowerCase()] = false;
-    });
-
-    chatInput.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") {
-        const msg = chatInput.value;
-        if (msg.trim() !== "") {
-          socket.emit("chat", { roomId, msg });
-          chatInput.value = "";
-        }
+    // register yanıtı
+    if (data.type === "register") {
+      if (!data.ok) {
+        alert("Kayıt başarısız: " + (data.reason||""));
+        ws.close();
+        connectBtn.disabled = false;
+        statusEl.textContent = "Kayıt reddedildi.";
+        return;
+      } else {
+        statusEl.textContent = "Çevrimiçi: " + myName;
       }
-    });
-
-    socket.on("chat", (msg) => {
-      const p = document.createElement("p");
-      p.textContent = msg;
-      messages.appendChild(p);
-      messages.scrollTop = messages.scrollHeight;
-    });
-
-    function loop() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      for (let id in players) {
-        const p = players[id];
-        ctx.fillStyle = p.team === "red" ? "red" : "blue";
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.fillStyle = "white";
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (roomId) {
-        socket.emit("input", {
-          roomId,
-          input: {
-            up: keys["w"] || keys["arrowup"],
-            down: keys["s"] || keys["arrowdown"],
-            left: keys["a"] || keys["arrowleft"],
-            right: keys["d"] || keys["arrowright"],
-            kick: keys[" "] || keys["insert"] || keys["0"]
-          }
-        });
-      }
-
-      requestAnimationFrame(loop);
+      return;
     }
 
-    loop();
-  </script>
+    // geçmiş
+    if (data.type === "history") {
+      messagesEl.innerHTML = "";
+      (data.messages || []).forEach(m => addMessage(m.name, m.text, m.time));
+      return;
+    }
+
+    // yeni chat
+    if (data.type === "chat") {
+      addMessage(data.name, data.text, data.time);
+      return;
+    }
+
+    // temizle
+    if (data.type === "clear") {
+      messagesEl.innerHTML = "";
+      return;
+    }
+
+    // üyeler listesi
+    if (data.type === "members") {
+      renderMembers(data.members || []);
+      renderCallMembers(data.members || []);
+      return;
+    }
+
+    // sinyalleme
+    if (data.type === "signal") {
+      handleSignal(data);
+      return;
+    }
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = "Bağlantı kapandı.";
+    connectBtn.disabled = false;
+  };
+
+  ws.onerror = (e) => {
+    console.error("WS hata", e);
+    statusEl.textContent = "Bağlantı hatası.";
+    connectBtn.disabled = false;
+  };
+};
+
+/* ---------- Mesaj gönderme ---------- */
+sendBtn.onclick = sendChat;
+textIn.addEventListener("keypress", e => { if (e.key === "Enter") sendChat(); });
+
+function sendChat(){
+  const text = textIn.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const payload = { type: "chat", name: myName, text, time: Date.now() };
+  ws.send(JSON.stringify(payload));
+  textIn.value = "";
+}
+
+/* ---------- Temizle ---------- */
+clearBtn.onclick = () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!confirm("Tüm mesajları temizlemek istediğine emin misin?")) return;
+  ws.send(JSON.stringify({ type: "clear" }));
+}
+
+/* ---------- Üyeler render & arama listesi ---------- */
+function renderMembers(members){
+  memberListEl.innerHTML = "";
+  members.forEach(name => {
+    const div = document.createElement("div");
+    div.className = "member";
+    div.innerHTML = `<div style="width:36px;height:36px;border-radius:50%;background:#666"></div>
+      <div style="margin-left:6px">${escape(name)}</div>
+      <div style="margin-left:auto;width:10px;height:10px;border-radius:50%;background:#4caf50;margin-right:8px"></div>`;
+    memberListEl.appendChild(div);
+  });
+}
+
+function renderCallMembers(members){
+  membersCallsEl.innerHTML = "";
+  members.forEach(name => {
+    if (name === myName) return; // kendini arama listesinde gösterme
+    const div = document.createElement("div");
+    div.className = "member";
+    div.innerHTML = `<div style="width:36px;height:36px;border-radius:50%;background:#666"></div>
+      <div style="margin-left:6px">${escape(name)}</div>`;
+    const btn = document.createElement("button");
+    btn.textContent = "Ara";
+    btn.onclick = () => startCall(name);
+    div.appendChild(btn);
+    membersCallsEl.appendChild(div);
+  });
+}
+
+/* ---------- Mesaj gösterme helper ---------- */
+function addMessage(user, text, time){
+  const d = document.createElement("div");
+  d.className = "message " + (user===myName ? "mine" : "");
+  const avatar = document.createElement("div"); avatar.className = "avatar";
+  const bubble = document.createElement("div"); bubble.className = "bubble";
+  const meta = document.createElement("div"); meta.className = "meta";
+  meta.textContent = user + " • " + (time ? new Date(time).toLocaleTimeString() : new Date().toLocaleTimeString());
+  const txt = document.createElement("div"); txt.textContent = text;
+  bubble.appendChild(meta); bubble.appendChild(txt);
+  d.appendChild(avatar); d.appendChild(bubble);
+  messagesEl.appendChild(d);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/* ---------- WebRTC işlemleri ---------- */
+async function startCall(target){
+  if (!ws || ws.readyState !== WebSocket.OPEN) { alert("Sunucuya bağlı değil."); return; }
+  if (!localStream) {
+    try { localStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch(e){ alert("Mikrofon izni gerekli."); return; }
+  }
+  if (pcs[target]) {
+    alert("Zaten arama açık veya beklemede.");
+    return;
+  }
+  const pc = createPC(target);
+  pcs[target] = pc;
+
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    ws.send(JSON.stringify({ type: "signal", signalType: "offer", offer, target, name: myName }));
+    addMessage("Sistem", `Arama başlatıldı: ${target}`, Date.now());
+    tabCall.click(); // aramalar sekmesine geç
+  } catch (e) {
+    console.error("Offer hata", e);
+  }
+}
+
+function createPC(remoteName){
+  const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+  // lokal stream ekle
+  if (localStream) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+  pc.ontrack = (ev) => {
+    // uzak ses gelirse çal
+    remoteAudio.srcObject = ev.streams[0];
+  };
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) {
+      ws.send(JSON.stringify({ type: "signal", signalType: "candidate", candidate: ev.candidate, target: remoteName, name: myName }));
+    }
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === "disconnected" || pc.connectionState === "failed" || pc.connectionState === "closed") {
+      // temizle
+      if (pcs[remoteName]) delete pcs[remoteName];
+      addMessage("Sistem", `Arama sonlandı: ${remoteName}`, Date.now());
+    }
+  };
+  return pc;
+}
+
+async function handleSignal(data){
+  const signalType = data.signalType;
+  const from = data.from || data.name; // incoming 'from' set by server
+  if (signalType === "offer") {
+    // gelen offer: göster kabul/ret
+    const accept = confirm(`${from} tarafından arandınız. Kabul et?`);
+    if (!accept) {
+      ws.send(JSON.stringify({ type: "signal", signalType: "reject", target: from, name: myName }));
+      addMessage("Sistem", `${from} araması reddedildi`, Date.now());
+      return;
+    }
+    // kabul: oluştur ve cevap gönder
+    if (!localStream) {
+      try { localStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch(e){ alert("Mikrofon gerek"); return; }
+    }
+    const pc = createPC(from);
+    pcs[from] = pc;
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: "signal", signalType: "answer", answer, target: from, name: myName }));
+      addMessage("Sistem", `${from} ile arama kuruldu`, Date.now());
+      tabCall.click();
+    } catch (e) {
+      console.error("offer handling hata", e);
+    }
+    return;
+  }
+
+  if (signalType === "answer") {
+    // cevap pc'yi alıp remote desc set et
+    const pc = pcs[data.from];
+    if (!pc) { console.warn("PC yok (answer)"); return; }
+    await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+    addMessage("Sistem", `${data.from} aramaya cevap verdi`, Date.now());
+    return;
+  }
+
+  if (signalType === "candidate") {
+    const pc = pcs[data.from];
+    if (!pc) return;
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } catch (e) {
+      console.error("candidate ekle hatası", e);
+    }
+    return;
+  }
+
+  if (signalType === "reject") {
+    addMessage("Sistem", `${data.from} aramanızı reddetti`, Date.now());
+    // varsa pc'yi kapat
+    if (pcs[data.from]) { pcs[data.from].close(); delete pcs[data.from]; }
+    return;
+  }
+
+  if (signalType === "error") {
+    addMessage("Sistem", `Sinyal hatası: ${data.message}`, Date.now());
+    return;
+  }
+}
+
+/* ---------- Yardımcı ---------- */
+function escape(s){ return String(s||"").replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
+</script>
 </body>
 </html>
